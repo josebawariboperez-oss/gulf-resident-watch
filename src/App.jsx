@@ -762,36 +762,19 @@ export default function App() {
       <div style={{ padding: "16px", background: "rgba(96,165,250,0.04)", borderTop: "1px solid rgba(96,165,250,0.1)", borderBottom: "1px solid rgba(96,165,250,0.1)" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "#edf0f5", fontFamily: HD, marginBottom: 3 }}>Get Daily Alerts</div>
         <div style={{ fontSize: 10, color: "#6b7585", marginBottom: 10 }}>Gulf Crisis Briefing — verified data, delivered to your inbox every morning at 6am GST.</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <input
-            type="email"
-            placeholder="your@email.com"
-            style={{
-              flex: 1, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 5, padding: "8px 12px", color: "#edf0f5", fontSize: 12,
-              fontFamily: MONO, outline: "none",
-            }}
-            onFocus={(e) => e.target.style.borderColor = "#60a5fa"}
-            onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
-          />
-          <button
-            onClick={(e) => {
-              const input = e.target.parentElement.querySelector("input");
-              const email = input.value;
-              if (email && email.includes("@")) {
-                input.value = "";
-                alert("Thanks! You'll receive the Gulf Crisis Briefing at 6am GST daily.");
-              }
-            }}
-            style={{
-              background: "#60a5fa", color: "#0a0e18", border: "none", borderRadius: 5,
-              padding: "8px 16px", fontSize: 11, fontWeight: 700, cursor: "pointer",
-              fontFamily: MONO, whiteSpace: "nowrap",
-            }}
-          >
-            Subscribe
-          </button>
-        </div>
+        <a
+          href="https://substack.com/@josebawariboperez"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "block", textAlign: "center", textDecoration: "none",
+            background: "#60a5fa", color: "#0a0e18", border: "none", borderRadius: 5,
+            padding: "10px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            fontFamily: MONO,
+          }}
+        >
+          Subscribe on Substack — Free
+        </a>
         <div style={{ fontSize: 8, color: "#3d4755", marginTop: 6 }}>Free during the conflict. No spam. Unsubscribe anytime.</div>
       </div>
 
