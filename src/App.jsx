@@ -1,681 +1,804 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 
-/*
- * GULF RESIDENT WATCH — gulfresidentwatch.com
- * Real-time conflict impact dashboard for Gulf residents
- * Data sourced from official Ministry of Defense communiqués
- * 
- * Design: Military-utilitarian meets editorial clarity
- * Audience: Expatriates & residents in UAE, Qatar, Bahrain, Kuwait, Saudi Arabia
- */
+const LAST_UPDATED = "8 Mar 2026, 18:00 GST";
+const DAY = 9;
+const HD = "'IBM Plex Sans', system-ui, sans-serif";
+const MONO = "'IBM Plex Mono', 'Menlo', monospace";
 
-// ─── VERIFIED DATA: UAE (Source: WAM / UAE MoD) ───
-// Latest cumulative figures as of March 8, 2026
-const UAE_DATA = {
-  country: "UAE", flag: "🇦🇪",
-  ballistic: { detected: 221, destroyed: 205, sea: 14, landed: 2 },
-  drones: { detected: 1305, intercepted: 1229, landed: 76 },
-  cruise: { detected: 8, destroyed: 8 },
-  casualties: { dead: 3, injured: 112 },
-  deadNationalities: "Pakistani, Nepali, Bangladeshi",
-  source: "UAE Ministry of Defence via WAM",
-  sourceDate: "8 Mar 2026",
-  sourceUrl: "wam.ae",
-};
-
-// ─── VERIFIED DATA: BAHRAIN (Source: BDF General Command) ───
-const BAHRAIN_DATA = {
-  country: "Bahrain", flag: "🇧🇭",
-  ballistic: { detected: 78, destroyed: 78, sea: 0, landed: 0 },
-  drones: { detected: 143, intercepted: 143, landed: 0 },
-  cruise: { detected: 0, destroyed: 0 },
-  casualties: { dead: 1, injured: 0 },
-  deadNationalities: "Asian worker (vessel maintenance)",
-  source: "Bahrain Defence Force General Command",
-  sourceDate: "6 Mar 2026",
-  sourceUrl: "aljazeera.com",
-};
-
-// ─── VERIFIED DATA: QATAR (Source: Qatar MoD) ───
-const QATAR_DATA = {
-  country: "Qatar", flag: "🇶🇦",
-  ballistic: { detected: 66, destroyed: 63, sea: 0, landed: 3 },
-  drones: { detected: 49, intercepted: 42, landed: 7 },
-  cruise: { detected: 3, destroyed: 3 },
-  casualties: { dead: 0, injured: 16 },
-  deadNationalities: "",
-  notes: "Shot down 2 Iranian Su-24 bombers on Mar 2. First air-to-air engagement of the conflict.",
-  source: "Qatar Ministry of Defence / Qatar MoI",
-  sourceDate: "6 Mar 2026",
-  sourceUrl: "aljazeera.com / navalnews.com",
-};
-
-// ─── VERIFIED DATA: KUWAIT (Source: Kuwait MoD) ───
-const KUWAIT_DATA = {
-  country: "Kuwait", flag: "🇰🇼",
-  ballistic: { detected: 97, destroyed: 97, sea: 0, landed: 0 },
-  drones: { detected: 283, intercepted: 278, landed: 5 },
-  cruise: { detected: 0, destroyed: 0 },
-  casualties: { dead: 4, injured: 0 },
-  deadNationalities: "Girl (shrapnel), 2 Fire Force officers, 1 other",
-  source: "Kuwait Ministry of Defence via Breaking Defense",
-  sourceDate: "7 Mar 2026",
-  sourceUrl: "breakingdefense.com",
-};
-
-// ─── VERIFIED DATA: SAUDI ARABIA (Source: Saudi MoD — limited disclosure) ───
-const SAUDI_DATA = {
-  country: "Saudi Arabia", flag: "🇸🇦",
-  ballistic: { detected: null, destroyed: null, sea: 0, landed: 0 },
-  drones: { detected: null, intercepted: null, landed: 0 },
-  cruise: { detected: 1, destroyed: 1 },
-  casualties: { dead: 0, injured: 0 },
-  deadNationalities: "",
-  notes: "Saudi Arabia has not released full interception figures. Confirmed: 2 ballistic missiles intercepted at Prince Sultan Air Base, 6 drones near Shaybah oilfield, cruise missile east of al-Kharj, drones east of Riyadh. Targets include Ras Tanura refinery.",
-  source: "Saudi Ministry of Defence via Reuters / Al Jazeera",
-  sourceDate: "7 Mar 2026",
-  sourceUrl: "aljazeera.com",
-};
-
-const ALL_COUNTRIES = [UAE_DATA, BAHRAIN_DATA, QATAR_DATA, KUWAIT_DATA, SAUDI_DATA];
-
-// ─── CENTCOM AGGREGATE (for cross-reference) ───
-const CENTCOM_TOTALS = {
-  missiles: 500, drones: 2000,
-  period: "First 4 days",
-  source: "Admiral Brad Cooper, CENTCOM",
-  sourceDate: "4 Mar 2026",
-};
-
-// ─── OIL / ECONOMIC DATA ───
-const OIL_TIMELINE = [
-  { date: "Feb 25", brent: 70.78, event: null },
-  { date: "Feb 28", brent: 74.26, event: "War begins" },
-  { date: "Mar 1", brent: 78.47, event: null },
-  { date: "Mar 2", brent: 81.80, event: null },
-  { date: "Mar 3", brent: 85.41, event: "Hormuz near-standstill" },
-  { date: "Mar 4", brent: 84.32, event: null },
-  { date: "Mar 5", brent: 81.53, event: null },
-  { date: "Mar 6", brent: 85.41, event: "Qatar LNG Force Majeure" },
-  { date: "Mar 7", brent: 92.69, event: "Record weekly gain" },
+// ── ESCALATION DATA ──
+const ESC = [
+  { d: "D1", s: 95, note: "War begins, all GCC struck" },
+  { d: "D2", s: 90, note: "Hormuz threatened, oil spikes" },
+  { d: "D3", s: 85, note: "Qatar downs Su-24s" },
+  { d: "D4", s: 88, note: "Nuclear sites struck" },
+  { d: "D5", s: 82, note: "Iran navy destroyed" },
+  { d: "D6", s: 80, note: "Refineries hit" },
+  { d: "D7", s: 78, note: "LNG Force Majeure" },
+  { d: "D8", s: 85, note: "Iran rift, Dubai hit" },
+  { d: "D9", s: 83, note: "Attacks continue" },
 ];
 
-// ─── CIVIL STATUS ───
-const CIVIL_STATUS = [
-  { category: "AVIATION", items: [
-    { location: "Dubai Int'l (DXB)", status: "partial", detail: "Limited operations resumed. Intermittent suspensions during active threats.", source: "GDMO / Emirates", date: "8 Mar" },
-    { location: "Abu Dhabi (AUH)", status: "partial", detail: "Zayed Int'l operating limited schedule. 1 killed near airport from debris.", source: "GCAA", date: "7 Mar" },
-    { location: "Doha (DOH)", status: "closed", detail: "Qatar CAA suspended all air navigation indefinitely. Qatar Airways grounded.", source: "Qatar CAA", date: "8 Mar" },
-    { location: "Bahrain (BAH)", status: "partial", detail: "Targeted by drone, material damage. Limited operations.", source: "Bahrain MoI", date: "6 Mar" },
-    { location: "Kuwait (KWI)", status: "partial", detail: "Two fuel depots hit by drones causing major fire. Partial operations.", source: "Kuwait DGCA", date: "8 Mar" },
-    { location: "Muscat (MCT)", status: "open", detail: "Fully operational. Serving as regional transit hub for evacuations.", source: "Oman Airports", date: "8 Mar" },
+// ── BUSINESS & OPERATIONS ──
+const BIZ_OPS = [
+  { cat: "FINANCIAL MARKETS", status: "partial", color: "#f59e0b", items: [
+    { what: "DFM (Dubai Financial Market)", detail: "Reopened Mar 4. Fell 4.7% — sharpest drop since May 2022.", src: "Bloomberg", url: "https://www.bloomberg.com/news/articles/2026-03-06/iran-war-drone-missile-attacks-reshape-dubai-financial-district-at-ramadan" },
+    { what: "ADX (Abu Dhabi Securities)", detail: "Reopened Mar 4. Down 1.9%.", src: "Bloomberg", url: "" },
+    { what: "Nasdaq Dubai", detail: "Reopened Mar 4 per DFSA announcement.", src: "DFSA", url: "" },
+    { what: "Gold demand", detail: "Surging. Bar demand up sharply across Dubai jewellers.", src: "CNBC", url: "https://www.cnbc.com/2026/03/05/iran-war-dubai-rich.html" },
   ]},
-  { category: "MARITIME", items: [
-    { location: "Strait of Hormuz", status: "critical", detail: "Near-zero commercial traffic. Only 4 transits in 24h. 150+ ships anchored outside. War risk insurance withdrawn Mar 5.", source: "UKMTO / Lloyd's", date: "8 Mar" },
-    { location: "Jebel Ali Port", status: "partial", detail: "Partial operations resumed after debris damage from interceptions.", source: "DP World", date: "6 Mar" },
+  { cat: "FREE ZONES & OFFICES", status: "partial", color: "#f59e0b", items: [
+    { what: "DIFC", detail: "Operational but 'eerily quiet'. ICD Brookfield near-empty. Bankers and high-end clientele largely absent. Top 120 families manage $1.2T here.", src: "Bloomberg", url: "https://www.bloomberg.com/news/articles/2026-03-06/iran-war-drone-missile-attacks-reshape-dubai-financial-district-at-ramadan" },
+    { what: "ADGM", detail: "Operational. Banks, Mubadala offices open.", src: "The Business Year", url: "https://thebusinessyear.com/article/2026-middle-east-conflict-why-the-gulf-will-endure/" },
+    { what: "DMCC, JAFZA, IFZA, RAKEZ", detail: "All operational with security measures. Services continue.", src: "digitaldubai.ai", url: "https://www.digitaldubai.ai/dubai-updates/iran-attacks-dubai-march-2026-damage-locations-updates" },
+    { what: "Shams (Sharjah), SAIF Zone", detail: "Operational. Port of Sharjah open with increased security.", src: "Various", url: "" },
   ]},
-  { category: "ENERGY", items: [
-    { location: "Qatar LNG (Ras Laffan)", status: "critical", detail: "All production ceased. Force Majeure declared. Restart could take weeks.", source: "QatarEnergy / Reuters", date: "6 Mar" },
-    { location: "Bahrain (Bapco Sitra)", status: "partial", detail: "Refinery hit by missile. Fire controlled. Operations continuing under review.", source: "Bapco Energies", date: "5 Mar" },
-    { location: "Saudi (Ras Tanura)", status: "partial", detail: "Targeted by drones. Temporary shutdown for assessment. Exports via Red Sea pipeline.", source: "Aramco / Reuters", date: "6 Mar" },
+  { cat: "LOGISTICS & SHIPPING", status: "critical", color: "#ef4444", items: [
+    { what: "Strait of Hormuz", detail: "Near-zero traffic. 150+ ships anchored outside. All major lines suspended (Maersk, MSC, Hapag-Lloyd, CMA CGM).", src: "UKMTO / Lloyd's", url: "https://www.cnbc.com/2026/03/07/not-slowing-down-one-week-on-us-israeli-strikes-on-iran-continue.html" },
+    { what: "Jebel Ali Port", detail: "Partial ops after debris damage and fire. Some cargo moving.", src: "DP World", url: "" },
+    { what: "War risk insurance", detail: "Withdrawn for Persian Gulf effective Mar 5. Companies cannot insure shipments through Hormuz.", src: "Lloyd's List", url: "" },
+    { what: "Fujairah Port", detail: "Gaining importance — outside Hormuz chokepoint. Industrial zone hit Mar 5.", src: "Al Jazeera", url: "https://www.aljazeera.com/news/2026/3/5/iran-fires-more-missiles-drones-across-gulf-region-amid-us-israeli-attacks" },
   ]},
-  { category: "CIVIL DEFENSE", items: [
-    { location: "UAE (NCEMA)", status: "active", detail: "Shelter-in-place alerts active. AG warns against sharing attack photos/videos. Schools remote in some emirates.", source: "NCEMA / WAM", date: "8 Mar" },
-    { location: "Qatar", status: "active", detail: "Schools moved to remote learning. Public Ramadan gatherings suspended. IRGC cells arrested.", source: "Qatar MoI", date: "6 Mar" },
-    { location: "Kuwait", status: "active", detail: "Civil defense measures in place. Airport fuel depot fires being managed.", source: "Kuwait MoI", date: "8 Mar" },
+  { cat: "AVIATION & TRAVEL", status: "partial", color: "#f59e0b", items: [
+    { what: "DXB (Dubai)", detail: "Limited ops. Emirates & flydubai partial schedules. DWC as alternative. ~20,000 passengers stranded.", src: "GDMO / Gulf News", url: "https://gulfnews.com/uae/usisrael-war-on-iran-day-8-new-wave-of-airstrikes-hits-tehran-uae-confirms-full-readiness-emirates-cancels-all-dubai-flights-1.500466181" },
+    { what: "AUH (Abu Dhabi)", detail: "Limited schedule. Evacuation flights running.", src: "GCAA", url: "" },
+    { what: "DOH (Doha)", detail: "Closed indefinitely. Qatar Airways grounded. ~8,000 stranded in transit.", src: "Qatar CAA", url: "" },
+    { what: "MCT (Muscat)", detail: "Fully operational. Main regional evacuation hub. Alternative routing.", src: "Oman Airports", url: "https://www.middleeastbriefing.com/news/iran-war-gulf-business-tracker-and-operations-resumption/" },
+    { what: "Private jets", detail: "Demand surging. 100+ inquiries overnight. Riyadh-Europe up to $350,000.", src: "CNBC", url: "https://www.cnbc.com/2026/03/05/iran-war-dubai-rich.html" },
+  ]},
+  { cat: "ENERGY SUPPLY CHAIN", status: "critical", color: "#ef4444", items: [
+    { what: "Qatar LNG (Ras Laffan)", detail: "All production ceased. Force Majeure declared. Restart weeks away. EU gas prices +50%.", src: "QatarEnergy / Bloomberg", url: "" },
+    { what: "Saudi (Ras Tanura)", detail: "Targeted by drones. Temp shutdown. Exports via Red Sea pipeline continue.", src: "Reuters", url: "" },
+    { what: "Bahrain (Bapco Sitra)", detail: "Refinery hit. Fire controlled quickly. No injuries. Under review.", src: "Bapco", url: "" },
+    { what: "Kuwait oil", detail: "Cutting production due to Hormuz threats and storage full.", src: "WSJ", url: "" },
+  ]},
+  { cat: "WORKFORCE & LEGAL", status: "caution", color: "#f59e0b", items: [
+    { what: "Remote work", detail: "Many Dubai and Abu Dhabi firms operating remotely. Government hasn't mandated but firms choosing caution.", src: "Various", url: "" },
+    { what: "Schools", detail: "Parts of UAE and all of Qatar moved to remote learning.", src: "NCEMA / Qatar MoI", url: "" },
+    { what: "Insurance claims", detail: "War exclusion clauses likely apply. Contact provider immediately for business interruption and property damage.", src: "digitaldubai.ai", url: "https://www.digitaldubai.ai/dubai-updates/iran-attacks-dubai-march-2026-damage-locations-updates" },
+    { what: "Force Majeure", detail: "Companies with Gulf operations should review contracts. QatarEnergy already invoked FM on LNG deliveries.", src: "Reuters", url: "" },
+    { what: "Staff evacuation", detail: "US State Dept urging Americans to leave. Multiple embassy evacuations. Check your embassy's advisory.", src: "US State Dept", url: "https://www.cfr.org/global-conflict-tracker/conflict/confrontation-between-united-states-and-iran" },
+    { what: "Hiring", detail: "Some firms pre-planning layoffs and halting fundraising. Investment firms pausing activity.", src: "CNBC / Bloomberg", url: "https://www.cnbc.com/2026/03/05/iran-war-dubai-rich.html" },
   ]},
 ];
 
-// ─── KEY STATEMENTS ───
-const STATEMENTS = [
-  { who: "Trump", role: "US President", flag: "🇺🇸", quote: "Today Iran will be hit very hard!", date: "7 Mar", side: "coalition", source: "Truth Social" },
-  { who: "Netanyahu", role: "Israel PM", flag: "🇮🇱", quote: "Many surprises lie ahead for the next phase.", date: "7 Mar", side: "coalition", source: "Times of Israel" },
-  { who: "Pezeshkian", role: "Iran President", flag: "🇮🇷", quote: "I apologize to our Gulf neighbors. We will stop striking them from March 7 unless attacks originate from there.", date: "7 Mar", side: "iran", source: "Iranian state media" },
-  { who: "Ghalibaf", role: "Iran Speaker", flag: "🇮🇷", quote: "As long as Gulf nations host US bases, they will be subjected to strikes.", date: "7 Mar", side: "iran", source: "Iranian state TV" },
-  { who: "IRGC", role: "Revolutionary Guards", flag: "🇮🇷", quote: "We targeted Al Dhafra Air Base in the UAE this morning with a large number of drones.", date: "8 Mar", side: "iran", source: "IRGC via Tasnim" },
-  { who: "MBZ", role: "UAE President", flag: "🇦🇪", quote: "We are in a period of war and our forces have played an honorable role.", date: "7 Mar", side: "gulf", source: "WAM" },
-  { who: "MBS", role: "Saudi Crown Prince", flag: "🇸🇦", quote: "Continued attacks on the Kingdom could push Riyadh to respond in kind.", date: "7 Mar", side: "gulf", source: "Reuters" },
-  { who: "Qatar FM", role: "Majed al-Ansari", flag: "🇶🇦", quote: "All red lines have been crossed. From the north to the south of Qatar.", date: "4 Mar", side: "gulf", source: "Al Jazeera" },
-  { who: "Larijani", role: "Iran Security Chief", flag: "🇮🇷", quote: "The Strait is not officially closed, but the war has effectively closed it.", date: "7 Mar", side: "iran", source: "CNBC" },
-  { who: "al-Kaabi", role: "Qatar Energy Min.", flag: "🇶🇦", quote: "If war continues, other Gulf producers may halt exports. This will bring down economies of the world.", date: "6 Mar", side: "gulf", source: "Financial Times" },
+// ── DEFENSE ──
+const DEF = [
+  { c: "UAE", f: "🇦🇪", bm: [221, 205, 14, 2], dr: [1305, 1229, 76], cr: [8, 8], dead: 4, inj: 112, who: "Pakistani, Nepali, Bangladeshi nationals + motorist (Al Barsha)", src: "UAE MoD (WAM) + The National", dt: "8 Mar" },
+  { c: "Kuwait", f: "🇰🇼", bm: [97, 97, 0, 0], dr: [283, 278, 5], cr: [0, 0], dead: 4, inj: 0, who: "1 girl, 2 Fire Force officers, 1 other", src: "Kuwait MoD / Breaking Defense", dt: "7 Mar" },
+  { c: "Bahrain", f: "🇧🇭", bm: [78, 78, 0, 0], dr: [143, 143, 0], cr: [0, 0], dead: 1, inj: 0, who: "Worker (vessel debris)", src: "BDF General Command", dt: "6 Mar" },
+  { c: "Qatar", f: "🇶🇦", bm: [66, 63, 0, 3], dr: [49, 42, 7], cr: [3, 3], dead: 0, inj: 16, note: "Shot down 2 Iranian Su-24s — first air-to-air kill of the war.", src: "Qatar MoD / Naval News", dt: "6 Mar" },
+  { c: "Saudi Arabia", f: "🇸🇦", bm: null, dr: null, cr: [1, 1], dead: 0, inj: 0, note: "Limited disclosure. Confirmed: 2 BMs at Prince Sultan AB, drones at Shaybah & near Riyadh, cruise missile at al-Kharj. Ras Tanura targeted.", src: "Saudi MoD via Reuters", dt: "7 Mar" },
 ];
 
-const REGIME_RIFT = {
-  title: "IRAN COMMAND CRISIS",
-  detail: "President Pezeshkian apologized to Gulf neighbors and ordered strikes to stop. Hours later, IRGC and Speaker Ghalibaf publicly contradicted him, continuing attacks on Dubai airport and Marina. BBC and Reuters analysts interpret this as a breakdown in unified command — the civilian government and Revolutionary Guards are no longer aligned.",
-  sources: "BBC, Reuters, WAM, Iranian state media",
+// ── EVENTS ──
+const EV = [
+  { t: "8 Mar 16:00", h: "UAE intercepts 15 ballistic missiles, 119/121 drones", s: "UAE MoD", tp: "defense", hot: true, url: "https://www.thenationalnews.com/news/uae/2026/03/07/uae-defences-iran-missile-attacks/" },
+  { t: "8 Mar 14:00", h: "Motorist killed by interception debris in Al Barsha, Dubai", s: "Dubai Police", tp: "casualty", hot: true, url: "https://www.thenationalnews.com/news/uae/2026/03/07/uae-defences-iran-missile-attacks/" },
+  { t: "8 Mar 12:00", h: "Three NCEMA safety alerts issued across UAE", s: "NCEMA", tp: "alert", hot: false, url: "" },
+  { t: "8 Mar 10:00", h: "IRGC claims targeting Al Dhafra Air Base with large drone wave", s: "Tasnim", tp: "attack", hot: true, url: "" },
+  { t: "8 Mar 08:00", h: "Pezeshkian backtracks on apology to Gulf states", s: "The National", tp: "political", hot: true, url: "https://www.thenationalnews.com/news/uae/2026/03/07/uae-defences-iran-missile-attacks/" },
+  { t: "8 Mar 06:00", h: "Kuwait: two fuel depots at airport hit by drones, huge fire", s: "CNBC", tp: "attack", hot: true, url: "https://www.cnbc.com/2026/03/08/iranian-projectiles-continue-to-strike-gulf-countries-infrastructure.html" },
+  { t: "8 Mar 04:00", h: "Bahrain: drone strikes water desalination plant, no supply impact", s: "Bahrain MoI", tp: "attack", hot: false, url: "" },
+  { t: "7 Mar 22:00", h: "Dubai Int'l partially resumes — Emirates operates limited flights", s: "GDMO", tp: "civil", hot: true, url: "https://gulfnews.com/uae/usisrael-war-on-iran-day-8-new-wave-of-airstrikes-hits-tehran-uae-confirms-full-readiness-emirates-cancels-all-dubai-flights-1.500466181" },
+  { t: "7 Mar 20:00", h: "Ain Dubai and Dubai Parks closed for the weekend", s: "Gulf News", tp: "civil", hot: false, url: "https://gulfnews.com/uae/usisrael-war-on-iran-day-8-new-wave-of-airstrikes-hits-tehran-uae-confirms-full-readiness-emirates-cancels-all-dubai-flights-1.500466181" },
+  { t: "7 Mar 18:00", h: "Saudi warns continued attacks could force military response", s: "Reuters", tp: "political", hot: true, url: "" },
+  { t: "7 Mar 14:00", h: "Iranian drones hit DXB and Dubai Marina tower despite ceasefire promise", s: "WAM", tp: "attack", hot: true, url: "https://en.wikipedia.org/wiki/2026_Iranian_strikes_on_the_United_Arab_Emirates" },
+  { t: "7 Mar 12:00", h: "Ghalibaf overrules Pezeshkian — 'attacks continue while US bases remain'", s: "Iranian TV", tp: "political", hot: true, url: "" },
+  { t: "7 Mar 09:00", h: "Pezeshkian apologizes to Gulf neighbors, orders strikes to stop", s: "Iranian media", tp: "political", hot: true, url: "" },
+  { t: "7 Mar 06:00", h: "Brent closes at $92.69 — largest weekly gain in futures history since 1983", s: "CNBC", tp: "economic", hot: true, url: "https://www.cnbc.com/2026/03/06/iran-us-war-oil-prices-brent-wti-barrel-futures.html" },
+  { t: "6 Mar 20:00", h: "UAE MoD: 205 BMs, 1,184 drones detected since Feb 28", s: "WAM", tp: "defense", hot: false, url: "https://www.wam.ae/en/article/bz3mqg3-uae-air-defences-intercept-ballistic-missiles-113" },
+  { t: "6 Mar 16:00", h: "Drone targets Israeli embassy area in Bahrain Financial Harbour", s: "Reuters / BDF", tp: "attack", hot: true, url: "https://www.aljazeera.com/news/2026/3/6/iran-targets-israeli-embassy-in-bahrain-saudi-arabia-intercepts-missile" },
+  { t: "6 Mar 14:00", h: "DFM reopens — index falls 4.7%, sharpest drop since May 2022", s: "Bloomberg", tp: "economic", hot: true, url: "" },
+  { t: "6 Mar 12:00", h: "Qatar energy minister: 'this will bring down economies of the world'", s: "Financial Times", tp: "economic", hot: true, url: "" },
+  { t: "6 Mar 08:00", h: "War risk insurance withdrawn for all Persian Gulf shipping", s: "Lloyd's List", tp: "economic", hot: true, url: "" },
+  { t: "5 Mar 16:00", h: "Explosion in Fujairah industrial zone from drone interception", s: "Al Jazeera", tp: "attack", hot: false, url: "https://www.aljazeera.com/news/2026/3/5/iran-fires-more-missiles-drones-across-gulf-region-amid-us-israeli-attacks" },
+  { t: "5 Mar 10:00", h: "DIFC 'eerily quiet' — bankers and Rolls-Royces gone", s: "Bloomberg", tp: "economic", hot: false, url: "https://www.bloomberg.com/news/articles/2026-03-06/iran-war-drone-missile-attacks-reshape-dubai-financial-district-at-ramadan" },
+  { t: "5 Mar 06:00", h: "Private jet demand surges — 100+ inquiries overnight from Dubai", s: "CNBC", tp: "civil", hot: false, url: "https://www.cnbc.com/2026/03/05/iran-war-dubai-rich.html" },
+  { t: "4 Mar 12:00", h: "UAE MoD: 189 BMs, 941 drones detected. 8 cruise missiles destroyed.", s: "WAM", tp: "defense", hot: false, url: "" },
+  { t: "3 Mar 08:00", h: "US/Israel destroy SNSC HQ, Min Zadai nuclear facility, Bushehr airport", s: "Multiple", tp: "attack", hot: true, url: "https://en.wikipedia.org/wiki/2026_Iran_war" },
+  { t: "2 Mar 14:00", h: "Qatar shoots down 2 Iranian Su-24 bombers — first air-to-air kill", s: "Qatar MoD", tp: "defense", hot: true, url: "https://www.navalnews.com/naval-news/2026/03/qatar-emiri-navy-intercepts-iranian-missiles-and-drones/" },
+  { t: "2 Mar 10:00", h: "QatarEnergy halts all LNG production, declares Force Majeure", s: "Reuters", tp: "economic", hot: true, url: "" },
+  { t: "1 Mar 08:00", h: "Trump announces 4-week timetable for operations, accepts Iran talks", s: "Daily Mail", tp: "political", hot: true, url: "" },
+  { t: "28 Feb 02:00", h: "US and Israel launch Operation Epic Fury — Khamenei killed", s: "Multiple", tp: "attack", hot: true, url: "https://en.wikipedia.org/wiki/2026_Iran_war" },
+];
+
+// ── IMPACT Q&A ──
+const QA = [
+  { q: "Is it safe outside?", a: "Follow NCEMA alerts. Shelter-in-place during interceptions. Between attacks, life continues but stay near shelter. AG warns against filming attacks.", status: "caution", icon: "🏠" },
+  { q: "Can I fly out?", a: "DXB & AUH: limited, changes hourly. Doha: closed indefinitely. Muscat: fully open — main evacuation hub. Check airline directly.", status: "partial", icon: "✈️" },
+  { q: "Food & water?", a: "Supermarkets stocked (Carrefour pre-stocked). Water stable. Bahrain desalination hit but no supply impact. Fuel at pump normal but rising.", status: "stable", icon: "🛒" },
+  { q: "Work & schools?", a: "Many offices remote. Some UAE schools and all Qatar schools online. Jebel Ali Port partial. Markets volatile but open.", status: "caution", icon: "💼" },
+  { q: "Oil & petrol?", a: "Brent $92.69 (+35% weekly). Hormuz effectively closed. Goldman: >$100 next week possible. Qatar LNG shutdown → EU gas +50%.", status: "warning", icon: "⛽" },
+];
+
+// ── OIL ──
+const OIL = [
+  { d: "Feb 25", b: 70.78 }, { d: "Feb 28", b: 74.26, e: "War starts" },
+  { d: "Mar 1", b: 78.47 }, { d: "Mar 2", b: 81.80 },
+  { d: "Mar 3", b: 85.41, e: "Hormuz shuts" }, { d: "Mar 4", b: 84.32 },
+  { d: "Mar 5", b: 81.53 }, { d: "Mar 6", b: 85.41, e: "LNG halt" },
+  { d: "Mar 7", b: 92.69, e: "Record week" },
+];
+
+// ── STATEMENTS ──
+const STMT = [
+  { who: "MBZ", role: "UAE President", flag: "🇦🇪", q: "We are in a period of war and our forces have played an honorable role.", d: "7 Mar", side: "gulf", via: "WAM" },
+  { who: "MBS", role: "Saudi Crown Prince", flag: "🇸🇦", q: "Continued attacks could force a Saudi military response.", d: "7 Mar", side: "gulf", via: "Reuters" },
+  { who: "al-Kaabi", role: "Qatar Energy Min.", flag: "🇶🇦", q: "Gulf producers may halt exports. This will bring down economies of the world.", d: "6 Mar", side: "gulf", via: "FT" },
+  { who: "Qatar FM", role: "al-Ansari", flag: "🇶🇦", q: "All red lines have been crossed. From north to south of Qatar.", d: "4 Mar", side: "gulf", via: "Al Jazeera" },
+  { who: "UAE AG", role: "Dr Al Shamsi", flag: "🇦🇪", q: "Stop sharing attack footage. Daily life continues normally while measures are taken.", d: "7 Mar", side: "gulf", via: "WAM" },
+  { who: "al-Mudahka", role: "Qatar Diplomat", flag: "🇶🇦", q: "We are not war seekers. We don't want to be dragged into this for the ideology of Netanyahu and Iran.", d: "3 Mar", side: "gulf", via: "Al Jazeera" },
+  { who: "Pezeshkian", role: "Iran President", flag: "🇮🇷", q: "I apologize to our Gulf neighbors. Strikes will cease from March 7.", d: "7 Mar", side: "iran", via: "State media" },
+  { who: "Ghalibaf", role: "Iran Speaker", flag: "🇮🇷", q: "As long as Gulf nations host US bases, strikes will continue.", d: "7 Mar", side: "iran", via: "Iranian TV" },
+  { who: "IRGC", role: "Rev. Guards", flag: "🇮🇷", q: "We targeted Al Dhafra with a large number of drones. This operation will continue relentlessly.", d: "8 Mar", side: "iran", via: "Tasnim" },
+  { who: "Larijani", role: "Security Chief", flag: "🇮🇷", q: "The Strait is not officially closed, but the war has closed it.", d: "7 Mar", side: "iran", via: "CNBC" },
+  { who: "Araghchi", role: "Iran FM", flag: "🇮🇷", q: "We are not targeting our brothers or neighbors in the Persian Gulf.", d: "3 Mar", side: "iran", via: "Al Jazeera" },
+  { who: "Trump", role: "US President", flag: "🇺🇸", q: "Today Iran will be hit very hard!", d: "7 Mar", side: "us", via: "Truth Social" },
+  { who: "Hegseth", role: "Defense Sec.", flag: "🇺🇸", q: "We are just getting started. Expect larger waves.", d: "5 Mar", side: "us", via: "CNN" },
+  { who: "Netanyahu", role: "Israel PM", flag: "🇮🇱", q: "Many surprises lie ahead for the next phase.", d: "7 Mar", side: "us", via: "Times of Israel" },
+  { who: "Starmer", role: "UK PM", flag: "🇬🇧", q: "US can use British bases for defensive strikes on Iran.", d: "2 Mar", side: "us", via: "BBC" },
+  { who: "Petraeus", role: "Fmr CIA Dir.", flag: "🇺🇸", q: "Iran's targeting of Gulf states was likely a strategic error that could pull more countries into the war.", d: "3 Mar", side: "us", via: "Reuters" },
+];
+
+// ── EMBASSY ADVISORIES ──
+const EMBASSIES = [
+  { country: "United States", flag: "🇺🇸", pop: "~100,000 in UAE", advisory: "LEAVE IMMEDIATELY", color: "#ef4444",
+    detail: "Ordered departure of non-emergency personnel (Mar 2). Urges all citizens to leave 16+ Middle East countries. Embassy Abu Dhabi & Consulate Dubai: all visa appointments cancelled. Embassies in Saudi & Kuwait closed after strikes.",
+    hotline: "+1-202-501-4444 (abroad) / +1-888-407-4747 (US)", action: "Enroll in STEP. Complete crisis intake form online.",
+    url: "https://ae.usembassy.gov/security-alert-u-s-mission-to-the-uae-march-5-2026/" },
+  { country: "United Kingdom", flag: "🇬🇧", pop: "~120,000 in UAE", advisory: "LEAVE IF YOU CAN", color: "#ef4444",
+    detail: "Register presence for direct FCDO updates. First evacuation charter from Oman landed Mar 6 after 24h delay. More charters planned. UK allowing bases for 'defensive' strikes.",
+    hotline: "+44 1908 516666", action: "Register at gov.uk. Charter flights from Muscat.",
+    url: "https://www.cnn.com/2026/03/04/travel/travel-advisories-middle-east-air-disruptions" },
+  { country: "India", flag: "🇮🇳", pop: "~3.5 million in UAE", advisory: "SHELTER / EVACUATE", color: "#f59e0b",
+    detail: "Developing evacuation operations. 3 Indian nationals killed in Strait of Hormuz. Pakistan sourced 99% LNG from Qatar/UAE — supply crisis affects subcontinent. Embassy coordinating with UAE authorities.",
+    hotline: "Indian Embassy Abu Dhabi: +971-2-4492700", action: "Register with embassy. Monitor MEA advisories.",
+    url: "" },
+  { country: "Pakistan", flag: "🇵🇰", pop: "~1.7 million in UAE", advisory: "SHELTER / STAY ALERT", color: "#f59e0b",
+    detail: "Pakistani national killed in UAE (first casualty). UAE announced visa fine exemptions for Pakistanis affected by airspace closures. Embassy coordinating. Protests at US consulate in Karachi (10 killed).",
+    hotline: "Pakistan Embassy: +971-2-4447800", action: "Contact UAE immigration to regularize overstay status.",
+    url: "" },
+  { country: "Bangladesh", flag: "🇧🇩", pop: "~1 million in UAE", advisory: "SHELTER / STAY ALERT", color: "#f59e0b",
+    detail: "Bangladeshi national killed in UAE. Another killed in Bahrain. Embassy coordinating shelter and potential evacuation.",
+    hotline: "Bangladesh Embassy: +971-2-6344700", action: "Register with embassy.",
+    url: "" },
+  { country: "Philippines", flag: "🇵🇭", pop: "~700,000 in UAE", advisory: "SHELTER IN PLACE", color: "#f59e0b",
+    detail: "Filipino woman killed in Israel by shrapnel. Government urging citizens to shelter in place across Gulf. Making evacuation/repatriation plans.",
+    hotline: "Philippine Embassy: +971-2-6343002", action: "Register at DFA. Follow shelter-in-place.",
+    url: "https://www.nbcnews.com/world/middle-east/live-blog/live-updates-iran-war-israel-us-hezbollah-lebanon-khamenei-trump-rcna261259" },
+  { country: "Nepal", flag: "🇳🇵", pop: "~300,000 in UAE", advisory: "SHELTER / STAY ALERT", color: "#f59e0b",
+    detail: "Nepali national killed in UAE (among first casualties). Embassy coordinating with UAE authorities.",
+    hotline: "Nepal Embassy: +971-2-6322324", action: "Register with embassy.",
+    url: "" },
+  { country: "France", flag: "🇫🇷", pop: "~30,000 in UAE", advisory: "LEAVE / CAUTION", color: "#f59e0b",
+    detail: "French base Camp de la Paix in Abu Dhabi struck by drones. Deployed Rafale jets for protection. EU arranging repatriation flights. At least 6 flights via European Commission.",
+    hotline: "French Embassy: +971-2-4435100", action: "Register at Ariane (MEAE). EU repatriation flights from Oman.",
+    url: "https://www.cnn.com/2026/03/04/travel/travel-advisories-middle-east-air-disruptions" },
+  { country: "Spain", flag: "🇪🇸", pop: "~15,000 in UAE", advisory: "LEAVE / CAUTION", color: "#f59e0b",
+    detail: "PM Sanchez condemned US-Israel strikes as breach of international law. EU repatriation flights available. Spanish Embassy coordinating.",
+    hotline: "Spanish Embassy: +971-2-6266544", action: "Register at Registro de Viajeros (MAEC).",
+    url: "" },
+  { country: "Russia", flag: "🇷🇺", pop: "~50,000 in UAE", advisory: "MONITOR / CAUTION", color: "#f59e0b",
+    detail: "Rosatom evacuated staff from Bushehr nuclear plant. Azerbaijan & Armenia receiving refugees from Iran (1,500+ by Mar 6). Reports Russia providing Iran intelligence on US positions (denied by White House).",
+    hotline: "Russian Embassy: +971-2-6721797", action: "Monitor embassy channels.",
+    url: "" },
+  { country: "Australia", flag: "🇦🇺", pop: "~25,000 in UAE", advisory: "LEAVE / DO NOT TRAVEL", color: "#ef4444",
+    detail: "Emergency portal opened for citizens in UAE, Qatar, Israel, Iran. Camp Baird at Al Minhad AB in Dubai directly attacked. 4 evacuation flights departed, 4 more planned. Do not travel to most Middle East destinations.",
+    hotline: "Consular Emergency: +61 2 6261 3305", action: "Register at smartraveller.gov.au. Evacuation via Oman.",
+    url: "https://www.cnn.com/2026/03/04/travel/travel-advisories-middle-east-air-disruptions" },
+  { country: "Canada", flag: "🇨🇦", pop: "~40,000 in UAE", advisory: "LEAVE ASAP", color: "#ef4444",
+    detail: "Advising to 'leave the UAE as soon as you can secure a flight.' Avoid all travel to Bahrain, Iraq, Israel, Kuwait, Lebanon, Qatar, UAE.",
+    hotline: "+1-613-996-8885 (collect)", action: "Register at Registration of Canadians Abroad.",
+    url: "https://www.cnn.com/2026/03/04/travel/travel-advisories-middle-east-air-disruptions" },
+  { country: "China", flag: "🇨🇳", pop: "~200,000 in UAE", advisory: "EVACUATE", color: "#ef4444",
+    detail: "Developing evacuation operations alongside Japan, S. Korea, Indonesia. Chinese national killed in Iran. Significant commercial interests in Gulf.",
+    hotline: "Chinese Embassy: +971-2-4434276", action: "Follow embassy WeChat channel.",
+    url: "" },
+];
+
+// ── DIPLOMATIC TRACKER ──
+const DIPLO = {
+  timeline: { start: "Feb 28", weeks: 4, daysPassed: 9, daysLeft: 19 },
+  status: "ACTIVE COMBAT — NO CEASEFIRE",
+  tracks: [
+    { ch: "US-Iran", s: "stalled", d: "Trump accepted talks proposal (Mar 1) but set 4-week timetable. Larijani: 'we will not negotiate.' No active dialogue confirmed.", src: "CNBC / AP" },
+    { ch: "Oman mediation", s: "dormant", d: "Key mediator in Feb nuclear talks. Only GCC country not struck. Positioned as neutral but no mediation since war began.", src: "Al Jazeera" },
+    { ch: "E3 (UK/FR/DE)", s: "active", d: "Backing 'proportionate defensive measures.' UK bases offered. France deployed Rafales. Calling for restraint.", src: "BBC / Reuters" },
+    { ch: "Gulf-Iran", s: "fractured", d: "Saudi warns of military response. UAE recalled ambassador. Qatar arrested IRGC cells. Years of rapprochement destroyed.", src: "Reuters" },
+    { ch: "UN Security Council", s: "blocked", d: "UN declared humanitarian emergency (Mar 6). Russia/China expected to block force resolution. No ceasefire resolution tabled.", src: "UN / Wikipedia" },
+    { ch: "Iran internal", s: "crisis", d: "Khamenei dead. Interim Council formed. Clerics selecting new leader (Mojtaba Khamenei frontrunner). Pezeshkian vs IRGC power struggle.", src: "NYT / Iranian media" },
+  ],
+  demands: [
+    { side: "US / Israel", color: "#60a5fa", items: "Dismantle nuclear program. Regime change. Destroy missile capability." },
+    { side: "Iran", color: "#f87171", items: "Stop attacks. Lift sanctions. No regime change interference." },
+    { side: "Gulf States", color: "#fbbf24", items: "Immediate ceasefire on Gulf territory. Iranian accountability. Secure shipping lanes." },
+  ],
 };
 
-// ─── STATUS COLORS & HELPERS ───
-const statusConfig = {
-  open: { color: "#22c55e", bg: "rgba(34,197,94,0.08)", border: "rgba(34,197,94,0.25)", label: "OPERATIONAL" },
-  partial: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", label: "PARTIAL" },
-  closed: { color: "#ef4444", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", label: "CLOSED" },
-  critical: { color: "#ef4444", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", label: "CRITICAL" },
-  active: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", label: "ACTIVE" },
-};
+const fmt = n => n == null ? "—" : n.toLocaleString();
+const evColor = { defense: "#22c55e", attack: "#ef4444", casualty: "#dc2626", alert: "#f59e0b", political: "#a78bfa", civil: "#60a5fa", economic: "#eab308" };
+const sideColor = { gulf: "#fbbf24", iran: "#f87171", us: "#60a5fa" };
+const stColor = { stable: "#22c55e", partial: "#f59e0b", caution: "#f59e0b", warning: "#ef4444" };
 
-const sideColors = { coalition: "#60a5fa", iran: "#f87171", gulf: "#fbbf24" };
-const sideLabels = { coalition: "US/ISRAEL", iran: "IRAN", gulf: "GULF STATES" };
-
-function formatNum(n) {
-  if (n === null || n === undefined) return "—";
-  return n.toLocaleString();
+function Badge({ label, color }) {
+  return (
+    <span style={{
+      fontSize: 8, fontWeight: 800, letterSpacing: "0.12em", color: color,
+      background: color + "14", border: `1px solid ${color}30`,
+      padding: "2px 7px", borderRadius: 3,
+    }}>
+      {label}
+    </span>
+  );
 }
 
-function InterceptBar({ intercepted, total, label, color = "#22c55e" }) {
+function BarChart({ label, hit, total, color }) {
   if (!total) return null;
-  const pct = (intercepted / total) * 100;
-  const missed = total - intercepted;
+  const pct = (hit / total) * 100;
+  const miss = total - hit;
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
-        <span style={{ color: "#8a919e", fontWeight: 600, letterSpacing: "0.06em" }}>{label}</span>
-        <span style={{ color: "#c9cdd4" }}>{formatNum(intercepted)}<span style={{ color: "#5a6170" }}> / {formatNum(total)}</span> <span style={{ color: pct > 95 ? "#22c55e" : pct > 85 ? "#f59e0b" : "#ef4444", fontWeight: 700 }}>({pct.toFixed(1)}%)</span></span>
+        <span style={{ color: "#6b7585" }}>{label}</span>
+        <span>
+          <span style={{ color: "#a0a8b4" }}>{fmt(hit)}</span>
+          <span style={{ color: "#3d4755" }}> / {fmt(total)} </span>
+          <span style={{ color: pct > 95 ? "#22c55e" : pct > 85 ? "#f59e0b" : "#ef4444", fontWeight: 700 }}>
+            {pct.toFixed(1)}%
+          </span>
+        </span>
       </div>
-      <div style={{ height: 8, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden", display: "flex" }}>
-        <div style={{ width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.8s ease" }} />
-        {missed > 0 && <div style={{ width: `${(missed / total) * 100}%`, background: "#ef4444", opacity: 0.7 }} />}
+      <div style={{ height: 7, background: "rgba(255,255,255,0.04)", borderRadius: 4, display: "flex", overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, background: color, borderRadius: 4 }} />
+        {miss > 0 && <div style={{ width: `${(miss / total) * 100}%`, background: "#ef4444", opacity: 0.5 }} />}
       </div>
-      {missed > 0 && (
-        <div style={{ fontSize: 10, color: "#ef4444", marginTop: 2 }}>
-          {missed} penetrated defenses
-        </div>
-      )}
+      {miss > 0 && <div style={{ fontSize: 9, color: "#ef4444", marginTop: 2 }}>{miss} got through</div>}
     </div>
   );
 }
 
-function OilChart({ data, width = 340, height = 100 }) {
-  const prices = data.map(d => d.brent);
-  const min = Math.min(...prices) - 3;
-  const max = Math.max(...prices) + 3;
-  const pts = data.map((d, i) => ({
-    x: (i / (data.length - 1)) * width,
-    y: height - ((d.brent - min) / (max - min)) * height,
+function EscalationMeter() {
+  const curr = ESC[ESC.length - 1];
+  const prev = ESC[ESC.length - 2];
+  const trend = curr.s > prev.s ? "ESCALATING" : curr.s < prev.s ? "DE-ESCALATING" : "STABLE";
+  const tc = trend === "ESCALATING" ? "#ef4444" : trend === "DE-ESCALATING" ? "#22c55e" : "#f59e0b";
+  const arrow = trend === "ESCALATING" ? "↑" : trend === "DE-ESCALATING" ? "↓" : "→";
+
+  return (
+    <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 9, color: "#4a5565", letterSpacing: "0.1em", fontWeight: 700 }}>ESCALATION INDEX</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 32, fontWeight: 800, color: tc, fontFamily: HD }}>{curr.s}</span>
+            <span style={{ fontSize: 11, color: "#4a5565" }}>/100</span>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: tc }}>{arrow}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: tc, letterSpacing: "0.05em" }}>{trend}</div>
+          <div style={{ fontSize: 9, color: "#3d4755" }}>{curr.note}</div>
+        </div>
+      </div>
+      {/* Sparkline */}
+      <svg viewBox="0 0 200 40" style={{ width: "100%", display: "block" }}>
+        <rect x="0" y="0" width="200" height="8" fill="rgba(239,68,68,0.06)" rx="1" />
+        <rect x="0" y="8" width="200" height="12" fill="rgba(245,158,11,0.04)" rx="1" />
+        <text x="2" y="6" fill="#ef444444" fontSize="4" fontFamily={MONO}>CRITICAL</text>
+        <text x="2" y="17" fill="#f59e0b33" fontSize="4" fontFamily={MONO}>HIGH</text>
+        {ESC.map((e, i) => {
+          const x = (i / (ESC.length - 1)) * 200;
+          const y = 40 - (e.s / 100) * 40;
+          return (
+            <g key={i}>
+              {i > 0 && (
+                <line
+                  x1={((i - 1) / (ESC.length - 1)) * 200}
+                  y1={40 - (ESC[i - 1].s / 100) * 40}
+                  x2={x} y2={y}
+                  stroke={tc} strokeWidth="1.5"
+                />
+              )}
+              <circle cx={x} cy={y} r={i === ESC.length - 1 ? 3 : 1.5}
+                fill={i === ESC.length - 1 ? tc : "#4a5565"} />
+              <text x={x} y="38" textAnchor="middle" fill="#3d4755" fontSize="3.5" fontFamily={MONO}>
+                {e.d}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function OilSparkline() {
+  const h = 50, w = 240;
+  const prices = OIL.map(o => o.b);
+  const mn = Math.min(...prices) - 3, mx = Math.max(...prices) + 3;
+  const pts = OIL.map((o, i) => ({
+    x: (i / (OIL.length - 1)) * w,
+    y: h - ((o.b - mn) / (mx - mn)) * h,
   }));
   const line = pts.map(p => `${p.x},${p.y}`).join(" ");
-  const area = line + ` ${width},${height} 0,${height}`;
   const last = pts[pts.length - 1];
 
   return (
-    <svg width={width} height={height + 24} style={{ overflow: "visible", display: "block", margin: "0 auto" }}>
+    <svg viewBox={`-5 -10 ${w + 20} ${h + 22}`} style={{ width: "100%", maxWidth: 340, display: "block", margin: "0 auto" }}>
       <defs>
-        <linearGradient id="oilFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ef4444" stopOpacity="0.25" />
+        <linearGradient id="oilG" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ef4444" stopOpacity="0.15" />
           <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <polygon points={area} fill="url(#oilFill)" />
-      <polyline points={line} fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinejoin="round" />
-      {data.map((d, i) => d.event && (
+      <polygon points={`${line} ${w},${h} 0,${h}`} fill="url(#oilG)" />
+      <polyline points={line} fill="none" stroke="#ef4444" strokeWidth="2" strokeLinejoin="round" />
+      {OIL.map((o, i) => o.e && (
         <g key={i}>
-          <line x1={pts[i].x} y1={pts[i].y} x2={pts[i].x} y2={height} stroke="#ef4444" strokeWidth="0.5" strokeDasharray="2,2" opacity="0.5" />
-          <circle cx={pts[i].x} cy={pts[i].y} r="3" fill="#ef4444" />
+          <circle cx={pts[i].x} cy={pts[i].y} r="2.5" fill="#ef4444" />
+          <text x={pts[i].x} y={pts[i].y - 5} fill="#ef4444" fontSize="5.5" textAnchor="middle" fontFamily={MONO}>{o.e}</text>
         </g>
       ))}
-      <circle cx={last.x} cy={last.y} r="5" fill="#0d1117" stroke="#ef4444" strokeWidth="2.5" />
-      <text x={last.x - 4} y={last.y - 12} fill="#ef4444" fontSize="13" fontWeight="800" textAnchor="end" fontFamily="inherit">
-        ${data[data.length - 1].brent}
-      </text>
-      {data.map((d, i) => (i % 2 === 0 || i === data.length - 1) && (
-        <text key={i} x={pts[i].x} y={height + 16} fill="#5a6170" fontSize="9" textAnchor="middle" fontFamily="inherit">{d.date}</text>
+      <circle cx={last.x} cy={last.y} r="4" fill="#0a0e18" stroke="#ef4444" strokeWidth="2" />
+      <text x={last.x - 3} y={last.y - 8} fill="#ef4444" fontSize="8" fontWeight="800" textAnchor="end" fontFamily={MONO}>${OIL[OIL.length - 1].b}</text>
+      {OIL.map((o, i) => (i % 2 === 0 || i === OIL.length - 1) && (
+        <text key={i} x={pts[i].x} y={h + 10} fill="#3d4755" fontSize="5" textAnchor="middle" fontFamily={MONO}>{o.d}</text>
       ))}
     </svg>
   );
 }
 
-function StatusBadge({ status }) {
-  const cfg = statusConfig[status] || statusConfig.partial;
-  return (
-    <span style={{
-      fontSize: 9, fontWeight: 800, letterSpacing: "0.12em",
-      color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`,
-      padding: "2px 8px", borderRadius: 3,
-    }}>
-      {cfg.label}
-    </span>
-  );
-}
-
-function SourceTag({ source, date, url }) {
-  return (
-    <div style={{ fontSize: 9, color: "#4a5060", marginTop: 6, fontStyle: "italic" }}>
-      Source: {source} · {date}{url ? ` · ${url}` : ""}
-    </div>
-  );
-}
-
-function PulsingDot({ color = "#ef4444", size = 8 }) {
-  return (
-    <span style={{
-      display: "inline-block", width: size, height: size, borderRadius: "50%",
-      background: color, boxShadow: `0 0 ${size}px ${color}88`,
-      animation: "glow 2s ease-in-out infinite",
-    }} />
-  );
-}
-
-export default function GulfResidentWatch() {
-  const [tab, setTab] = useState("defense");
-  const [expandedCountry, setExpandedCountry] = useState(null);
-  const [now] = useState(new Date());
+// ═══ MAIN ═══
+export default function App() {
+  const [tab, setTab] = useState("overview");
+  const [expDef, setExpDef] = useState(null);
+  const [expQA, setExpQA] = useState(null);
+  const [showAllEv, setShowAllEv] = useState(false);
 
   const tabs = [
-    { id: "defense", label: "AIR DEFENSE" },
-    { id: "civil", label: "CIVIL STATUS" },
-    { id: "economic", label: "ENERGY & OIL" },
-    { id: "statements", label: "STATEMENTS" },
+    { id: "overview", l: "OVERVIEW" },
+    { id: "emirates", l: "BUSINESS" },
+    { id: "defense", l: "DEFENSE" },
+    { id: "events", l: "EVENTS" },
+    { id: "oil", l: "OIL" },
+    { id: "voices", l: "VOICES" },
+    { id: "embassy", l: "EMBASSY" },
+    { id: "diplo", l: "DIPLOMACY" },
   ];
 
-  const totalMissiles = ALL_COUNTRIES.reduce((s, c) => s + (c.ballistic.detected || 0), 0);
-  const totalDrones = ALL_COUNTRIES.reduce((s, c) => s + (c.drones.detected || 0), 0);
-  const totalDead = ALL_COUNTRIES.reduce((s, c) => s + c.casualties.dead, 0);
-  const totalInjured = ALL_COUNTRIES.reduce((s, c) => s + c.casualties.injured, 0);
+  const totalDead = DEF.reduce((s, c) => s + c.dead, 0);
 
   return (
-    <div style={{
-      fontFamily: "'IBM Plex Mono', 'Fira Code', 'SF Mono', monospace",
-      background: "#0d1117", color: "#c9cdd4", minHeight: "100vh",
-    }}>
+    <div style={{ fontFamily: MONO, background: "#0a0e18", color: "#a0a8b8", minHeight: "100vh", maxWidth: 520, margin: "0 auto" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
-        @keyframes glow { 0%,100% { opacity:1 } 50% { opacity:0.3 } }
-        @keyframes slideIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 4px } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px }
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700;800&display=swap');
+        @keyframes glow{0%,100%{opacity:1}50%{opacity:.3}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{background:#0a0e18}
+        button{transition:opacity .15s}button:active{opacity:.7}
       `}</style>
 
-      {/* ═══ HEADER ═══ */}
-      <header style={{
-        background: "linear-gradient(180deg, rgba(239,68,68,0.06) 0%, transparent 100%)",
-        borderBottom: "1px solid rgba(239,68,68,0.15)", padding: "14px 18px",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+      {/* HEADER */}
+      <header style={{ borderBottom: "1px solid rgba(239,68,68,0.1)", padding: "14px 16px 10px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <PulsingDot />
-              <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 700, letterSpacing: "0.2em" }}>LIVE MONITORING</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ef4444", display: "inline-block", animation: "glow 2s ease-in-out infinite" }} />
+              <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 700, letterSpacing: "0.2em" }}>LIVE · DAY {DAY}</span>
             </div>
-            <h1 style={{
-              fontSize: 20, fontWeight: 700, letterSpacing: "-0.01em", color: "#f0f2f5",
-              fontFamily: "'IBM Plex Sans', sans-serif",
-            }}>
-              Gulf Resident Watch
-            </h1>
-            <div style={{ fontSize: 10, color: "#5a6170", marginTop: 2, letterSpacing: "0.04em" }}>
-              Iran War Impact Dashboard · For residents of the Gulf · Day 9
-            </div>
+            <h1 style={{ fontSize: 18, fontWeight: 800, color: "#edf0f5", fontFamily: HD }}>Gulf Resident Watch</h1>
+            <div style={{ fontSize: 9, color: "#3d4755", marginTop: 1 }}>Iran War Impact Dashboard · Verified Sources</div>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#f0f2f5", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-              8 MAR 2026
-            </div>
-            <div style={{ fontSize: 9, color: "#5a6170" }}>Data verified from official MoD sources</div>
+          <div style={{ textAlign: "right", fontSize: 8, color: "#3d4755" }}>
+            <div style={{ fontWeight: 600 }}>8 MAR 2026</div>
+            <div>{LAST_UPDATED}</div>
           </div>
         </div>
-
-        {/* Quick stats row */}
-        <div style={{
-          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
-          gap: 6, marginTop: 12,
-        }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4, marginTop: 10 }}>
           {[
-            { label: "MISSILES", value: formatNum(totalMissiles), sub: "detected in Gulf", color: "#ef4444" },
-            { label: "DRONES", value: formatNum(totalDrones), sub: "detected in Gulf", color: "#f97316" },
-            { label: "KILLED", value: totalDead.toString(), sub: "in Gulf states", color: "#ef4444" },
-            { label: "INJURED", value: formatNum(totalInjured), sub: "in Gulf states", color: "#f59e0b" },
-            { label: "BRENT", value: "$92.69", sub: "+35% this week", color: "#ef4444" },
-          ].map((stat, i) => (
-            <div key={i} style={{
-              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
-              borderRadius: 6, padding: "8px 10px",
-            }}>
-              <div style={{ fontSize: 8, color: "#5a6170", letterSpacing: "0.12em", fontWeight: 600 }}>{stat.label}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: stat.color, fontFamily: "'IBM Plex Sans', sans-serif" }}>{stat.value}</div>
-              <div style={{ fontSize: 8, color: "#4a5060" }}>{stat.sub}</div>
+            { l: "MISSILES", v: "462", c: "#ef4444" },
+            { l: "DRONES", v: "1,780", c: "#f97316" },
+            { l: "KILLED", v: String(totalDead), c: "#ef4444" },
+            { l: "BRENT", v: "$92.69", c: "#ef4444" },
+            { l: "HORMUZ", v: "SHUT", c: "#ef4444" },
+          ].map((s, i) => (
+            <div key={i} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 5, padding: "5px 2px", textAlign: "center" }}>
+              <div style={{ fontSize: 6, color: "#4a5565", letterSpacing: "0.1em" }}>{s.l}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: s.c, fontFamily: HD }}>{s.v}</div>
             </div>
           ))}
         </div>
       </header>
 
-      {/* ═══ HORMUZ ALERT ═══ */}
-      <div style={{ padding: "10px 18px 0" }}>
-        <div style={{
-          background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)",
-          borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <PulsingDot color="#ef4444" size={10} />
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#ef4444", letterSpacing: "0.06em" }}>
-              STRAIT OF HORMUZ — EFFECTIVELY CLOSED
-            </div>
-            <div style={{ fontSize: 10, color: "#8a919e", marginTop: 2 }}>
-              Only 4 commercial transits in 24h · 150+ ships anchored outside · War risk insurance withdrawn Mar 5 · 20% of global crude affected
-            </div>
-            <div style={{ fontSize: 9, color: "#4a5060", marginTop: 2, fontStyle: "italic" }}>
-              Sources: UKMTO, Lloyd's List, Wall Street Journal · 8 Mar 2026
-            </div>
-          </div>
-        </div>
+      {/* SHARE */}
+      <div style={{ padding: "8px 16px", display: "flex", gap: 6 }}>
+        <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`Gulf Resident Watch Day ${DAY}: UAE 1,305 drones / 221 missiles. Brent $92.69. Hormuz closed. Dubai limited flights, Doha closed, Muscat open. gulfresidentwatch.com`)}`, "_blank")} style={{ background: "#25D366", color: "#fff", border: "none", borderRadius: 5, padding: "6px 12px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: MONO }}>
+          WhatsApp
+        </button>
+        <button onClick={() => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Gulf Resident Watch Day ${DAY}: 1,305 drones / 221 missiles on UAE. Brent $92.69. Hormuz closed. Verified MoD data → gulfresidentwatch.com`)}`, "_blank")} style={{ background: "#1DA1F2", color: "#fff", border: "none", borderRadius: 5, padding: "6px 12px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: MONO }}>
+          Twitter
+        </button>
       </div>
 
-      {/* ═══ TABS ═══ */}
-      <nav style={{
-        display: "flex", gap: 0, padding: "10px 18px 0", overflowX: "auto",
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
-      }}>
+      {/* TABS */}
+      <nav style={{ display: "flex", overflowX: "auto", padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            background: "none", border: "none", cursor: "pointer",
-            padding: "8px 14px", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em",
-            color: tab === t.id ? "#ef4444" : "#5a6170",
+            background: "none", border: "none", cursor: "pointer", padding: "7px 10px",
+            fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", fontFamily: MONO,
+            color: tab === t.id ? "#ef4444" : "#3d4755",
             borderBottom: tab === t.id ? "2px solid #ef4444" : "2px solid transparent",
-            fontFamily: "inherit", whiteSpace: "nowrap", transition: "color 0.2s",
-          }}>
-            {t.label}
-          </button>
+          }}>{t.l}</button>
         ))}
       </nav>
 
-      {/* ═══ CONTENT ═══ */}
-      <main style={{ padding: "16px 18px" }}>
+      <main style={{ padding: "14px 16px", animation: "fadeIn .25s ease" }}>
 
-        {/* ── AIR DEFENSE TAB ── */}
-        {tab === "defense" && (
-          <div style={{ animation: "slideIn 0.3s ease" }}>
-            <div style={{ fontSize: 11, color: "#5a6170", marginBottom: 14, lineHeight: 1.6 }}>
-              Interception data from official Ministry of Defense communiqués of each Gulf state.
-              First time in history Iran has attacked all six GCC countries simultaneously.
-              Tap any country for details.
+        {/* ═══ OVERVIEW ═══ */}
+        {tab === "overview" && (
+          <div>
+            <EscalationMeter />
+
+            {/* Hormuz alert */}
+            <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 7, padding: "9px 12px", marginBottom: 14, display: "flex", gap: 10, alignItems: "center" }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#ef4444", display: "inline-block", animation: "glow 2s infinite", flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444" }}>STRAIT OF HORMUZ — EFFECTIVELY CLOSED</div>
+                <div style={{ fontSize: 9, color: "#5a6575" }}>4 transits/24h · 150+ ships stuck · Insurance withdrawn · 20% of global crude</div>
+              </div>
             </div>
 
-            {/* CENTCOM cross-reference */}
-            <div style={{
-              background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.15)",
-              borderRadius: 6, padding: "8px 12px", marginBottom: 14, fontSize: 10,
-            }}>
-              <span style={{ color: "#60a5fa", fontWeight: 700 }}>CENTCOM TOTAL:</span>{" "}
-              <span style={{ color: "#8a919e" }}>
-                Iran launched ~{CENTCOM_TOTALS.missiles} missiles and ~{CENTCOM_TOTALS.drones.toLocaleString()} drones in first 4 days across all targets (Gulf + Israel).
-              </span>
-              <span style={{ color: "#4a5060", fontStyle: "italic" }}> — Adm. Brad Cooper, 4 Mar</span>
-            </div>
+            {/* How does this affect me */}
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#edf0f5", fontFamily: HD, marginBottom: 8 }}>How does this affect me?</div>
+            {QA.map((item, i) => (
+              <div key={i} onClick={() => setExpQA(expQA === i ? null : i)} style={{
+                background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.04)",
+                borderRadius: 6, padding: "10px 12px", marginBottom: 5, cursor: "pointer",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>{item.icon}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#edf0f5", fontFamily: HD }}>{item.q}</span>
+                  </div>
+                  <Badge label={item.status.toUpperCase()} color={stColor[item.status] || "#f59e0b"} />
+                </div>
+                {expQA === i && (
+                  <div style={{ fontSize: 11, color: "#7a8595", marginTop: 8, lineHeight: 1.6, paddingLeft: 24 }}>{item.a}</div>
+                )}
+              </div>
+            ))}
 
-            {ALL_COUNTRIES.map((c, i) => {
-              const isExpanded = expandedCountry === i;
-              const totalProjectiles = (c.ballistic.detected || 0) + (c.drones.detected || 0) + (c.cruise.detected || 0);
-              return (
-                <div key={i}
-                  onClick={() => setExpandedCountry(isExpanded ? null : i)}
-                  style={{
-                    background: isExpanded ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.015)",
-                    border: `1px solid ${isExpanded ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)"}`,
-                    borderRadius: 8, padding: "12px 14px", marginBottom: 8, cursor: "pointer",
-                    transition: "all 0.2s",
+            {/* Iran rift */}
+            <div style={{ background: "rgba(168,85,247,0.05)", border: "1px solid rgba(168,85,247,0.15)", borderRadius: 7, padding: "10px 12px", marginTop: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa", marginBottom: 3 }}>IRAN COMMAND CRISIS</div>
+              <div style={{ fontSize: 10, color: "#6b7585", lineHeight: 1.6 }}>President Pezeshkian ordered strikes on Gulf to stop. Hours later, IRGC and Speaker Ghalibaf overruled him — attacks on Dubai continued. BBC and Reuters describe this as an unprecedented breakdown in unified command.</div>
+              <div style={{ fontSize: 8, color: "#333d4d", marginTop: 3, fontStyle: "italic" }}>Sources: BBC, Reuters, WAM, Iranian state media</div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ BY EMIRATE ═══ */}
+        {tab === "emirates" && (
+          <div>
+            <div style={{ fontSize: 10, color: "#4a5565", marginBottom: 12 }}>
+              Operational status for businesses in the Gulf. Updated from official sources, Bloomberg, CNBC, Lloyd's.
+            </div>
+            {BIZ_OPS.map((section, si) => (
+              <div key={si} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, paddingBottom: 4, borderBottom: `1px solid ${section.color}20` }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: section.color }}>{section.cat}</span>
+                  <Badge label={section.status === "critical" ? "CRITICAL" : section.status === "partial" ? "DISRUPTED" : "CAUTION"} color={section.color} />
+                </div>
+                {section.items.map((item, ii) => (
+                  <div key={ii} style={{
+                    background: "rgba(255,255,255,0.012)", borderRadius: 5,
+                    padding: "7px 10px", marginBottom: 4,
+                    borderLeft: `2px solid ${section.color}40`,
                   }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#dde1e8", fontFamily: HD }}>{item.what}</div>
+                    <div style={{ fontSize: 10, color: "#6b7585", lineHeight: 1.5, marginTop: 2 }}>{item.detail}</div>
+                    <div style={{ fontSize: 8, color: "#333d4d", marginTop: 3 }}>
+                      via {item.src}
+                      {item.url && (
+                        <a href={item.url} target="_blank" rel="noopener noreferrer"
+                          style={{ color: "#60a5fa", textDecoration: "none", marginLeft: 6, borderBottom: "1px solid #60a5fa33" }}>
+                          source ↗
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div style={{ fontSize: 9, color: "#333d4d", marginTop: 4, lineHeight: 1.5, fontStyle: "italic" }}>
+              Sources: Bloomberg, CNBC, Lloyd's List, UKMTO, QatarEnergy, Reuters, Gulf News, digitaldubai.ai, The Business Year, US State Dept, DFSA.
+            </div>
+          </div>
+        )}
+
+        {/* ═══ DEFENSE ═══ */}
+        {tab === "defense" && (
+          <div>
+            <div style={{ fontSize: 10, color: "#4a5565", marginBottom: 10 }}>Official interception figures. Tap for breakdown.</div>
+            {DEF.map((c, i) => {
+              const isExp = expDef === i;
+              return (
+                <div key={i} onClick={() => setExpDef(isExp ? null : i)} style={{
+                  background: isExp ? "rgba(255,255,255,0.025)" : "rgba(255,255,255,0.01)",
+                  border: `1px solid ${isExp ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.03)"}`,
+                  borderRadius: 7, padding: "10px 12px", marginBottom: 6, cursor: "pointer",
+                }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 22 }}>{c.flag}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                      <span style={{ fontSize: 20 }}>{c.f}</span>
                       <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#f0f2f5", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                          {c.country}
-                        </div>
-                        <div style={{ fontSize: 10, color: "#5a6170" }}>
-                          {totalProjectiles > 0 ? `${formatNum(totalProjectiles)} total projectiles detected` : "Limited data released"}
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#edf0f5", fontFamily: HD }}>{c.c}</div>
+                        <div style={{ fontSize: 9, color: "#3d4755" }}>
+                          {c.bm ? `${fmt(c.bm[0] + c.dr[0] + c.cr[0])} projectiles` : "Limited disclosure"}
                         </div>
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      {c.casualties.dead > 0 && (
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "#ef4444" }}>{c.casualties.dead} killed</div>
-                      )}
-                      {c.casualties.injured > 0 && (
-                        <div style={{ fontSize: 10, color: "#f59e0b" }}>{c.casualties.injured} injured</div>
-                      )}
-                      <div style={{ fontSize: 9, color: "#4a5060", marginTop: 2 }}>{isExpanded ? "▲" : "▼"}</div>
+                      {c.dead > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: "#ef4444" }}>{c.dead} killed</div>}
+                      {c.inj > 0 && <div style={{ fontSize: 10, color: "#f59e0b" }}>{c.inj} injured</div>}
                     </div>
                   </div>
-
-                  {isExpanded && (
-                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                      {c.ballistic.detected !== null && (
-                        <InterceptBar
-                          label="BALLISTIC MISSILES"
-                          intercepted={c.ballistic.destroyed + c.ballistic.sea}
-                          total={c.ballistic.detected}
-                          color="#60a5fa"
-                        />
-                      )}
-                      {c.drones.detected !== null && (
-                        <InterceptBar
-                          label="DRONES (UAV)"
-                          intercepted={c.drones.intercepted}
-                          total={c.drones.detected}
-                          color="#22c55e"
-                        />
-                      )}
-                      {c.cruise.detected > 0 && (
-                        <InterceptBar
-                          label="CRUISE MISSILES"
-                          intercepted={c.cruise.destroyed}
-                          total={c.cruise.detected}
-                          color="#a78bfa"
-                        />
-                      )}
-                      {c.deadNationalities && (
-                        <div style={{ fontSize: 10, color: "#8a919e", marginTop: 4 }}>
-                          Casualties: {c.deadNationalities}
-                        </div>
-                      )}
-                      {c.notes && (
-                        <div style={{
-                          fontSize: 10, color: "#f59e0b", marginTop: 8,
-                          background: "rgba(245,158,11,0.06)", padding: "6px 10px", borderRadius: 4,
-                        }}>
-                          {c.notes}
-                        </div>
-                      )}
-                      <SourceTag source={c.source} date={c.sourceDate} url={c.sourceUrl} />
+                  {isExp && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+                      {c.bm && <BarChart label="BALLISTIC MISSILES" hit={c.bm[1] + c.bm[2]} total={c.bm[0]} color="#60a5fa" />}
+                      {c.dr && <BarChart label="DRONES (UAV)" hit={c.dr[1]} total={c.dr[0]} color="#22c55e" />}
+                      {c.cr[0] > 0 && <BarChart label="CRUISE MISSILES" hit={c.cr[1]} total={c.cr[0]} color="#a78bfa" />}
+                      {c.who && <div style={{ fontSize: 9, color: "#6b7585", marginTop: 4 }}>Victims: {c.who}</div>}
+                      {c.note && <div style={{ fontSize: 9, color: "#f59e0b", marginTop: 6, background: "rgba(245,158,11,0.06)", padding: "5px 8px", borderRadius: 4 }}>{c.note}</div>}
+                      <div style={{ fontSize: 8, color: "#333d4d", marginTop: 5, fontStyle: "italic" }}>Source: {c.src} · {c.dt}</div>
                     </div>
                   )}
                 </div>
               );
             })}
-
-            {/* Note on data discrepancies */}
-            <div style={{
-              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)",
-              borderRadius: 6, padding: "10px 12px", marginTop: 12, fontSize: 10, color: "#5a6170", lineHeight: 1.6,
-            }}>
-              <span style={{ fontWeight: 700, color: "#8a919e" }}>⚠ DATA NOTE:</span> Figures may differ across sources because MoDs release cumulative updates at different times. We prioritize official government communiqués over media reports. Saudi Arabia has not released full interception totals. CENTCOM aggregate includes strikes on Israel and non-GCC countries. Numbers are updated as new official statements are released.
-            </div>
           </div>
         )}
 
-        {/* ── CIVIL STATUS TAB ── */}
-        {tab === "civil" && (
-          <div style={{ animation: "slideIn 0.3s ease" }}>
-            <div style={{ fontSize: 11, color: "#5a6170", marginBottom: 14 }}>
-              Operational status of critical infrastructure across the Gulf. Data from official aviation authorities, port operators, and civil defense agencies.
-            </div>
-
-            {CIVIL_STATUS.map((section, si) => (
-              <div key={si} style={{ marginBottom: 16 }}>
-                <div style={{
-                  fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", color: "#8a919e",
-                  marginBottom: 8, paddingBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.04)",
+        {/* ═══ EVENTS ═══ */}
+        {tab === "events" && (
+          <div>
+            <div style={{ fontSize: 10, color: "#4a5565", marginBottom: 10 }}>Last 48 hours. Most recent first.</div>
+            {(showAllEv ? EV : EV.slice(0, 8)).map((ev, i) => {
+              const cl = evColor[ev.tp] || "#6b7585";
+              return (
+                <div key={i} style={{
+                  borderLeft: `2px solid ${cl}`, padding: "7px 10px", marginBottom: 4,
+                  background: ev.hot ? "rgba(255,255,255,0.015)" : "transparent",
+                  borderRadius: "0 5px 5px 0",
                 }}>
-                  {section.category}
-                </div>
-                {section.items.map((item, ii) => (
-                  <div key={ii} style={{
-                    background: statusConfig[item.status]?.bg || "transparent",
-                    border: `1px solid ${statusConfig[item.status]?.border || "rgba(255,255,255,0.04)"}`,
-                    borderRadius: 6, padding: "10px 12px", marginBottom: 6,
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#f0f2f5", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                        {item.location}
-                      </span>
-                      <StatusBadge status={item.status} />
-                    </div>
-                    <div style={{ fontSize: 11, color: "#8a919e", lineHeight: 1.5 }}>{item.detail}</div>
-                    <SourceTag source={item.source} date={item.date} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                    <span style={{ fontSize: 7, fontWeight: 700, color: cl, letterSpacing: "0.1em", textTransform: "uppercase" }}>{ev.tp}</span>
+                    <span style={{ fontSize: 8, color: "#333d4d" }}>{ev.t}</span>
                   </div>
-                ))}
-              </div>
-            ))}
+                  <div style={{ fontSize: 11, color: ev.hot ? "#dde1e8" : "#6b7585", fontWeight: ev.hot ? 600 : 400, lineHeight: 1.4 }}>{ev.h}</div>
+                  <div style={{ fontSize: 8, color: "#2d3745", marginTop: 2 }}>
+                    via {ev.s}
+                    {ev.url && (
+                      <a href={ev.url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: "#60a5fa", textDecoration: "none", marginLeft: 6, borderBottom: "1px solid #60a5fa33" }}>
+                        source ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {!showAllEv && EV.length > 8 && (
+              <button onClick={() => setShowAllEv(true)} style={{
+                background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)",
+                borderRadius: 5, padding: "7px", fontSize: 9, color: "#4a5565",
+                cursor: "pointer", fontFamily: MONO, width: "100%", marginTop: 4,
+              }}>Show all {EV.length} events</button>
+            )}
           </div>
         )}
 
-        {/* ── ENERGY & OIL TAB ── */}
-        {tab === "economic" && (
-          <div style={{ animation: "slideIn 0.3s ease" }}>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 9, color: "#5a6170", letterSpacing: "0.1em", marginBottom: 4 }}>BRENT CRUDE OIL</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                <span style={{ fontSize: 36, fontWeight: 700, color: "#ef4444", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                  $92.69
-                </span>
-                <span style={{ fontSize: 13, color: "#ef4444", fontWeight: 600 }}>+35.6% this week</span>
-              </div>
-              <div style={{ fontSize: 11, color: "#8a919e", marginTop: 2 }}>
-                Largest weekly gain in futures trading history (since 1983)
-              </div>
-              <div style={{ fontSize: 9, color: "#4a5060", fontStyle: "italic" }}>
-                Source: CNBC, OilPrice.com · 7 Mar 2026 close
-              </div>
-            </div>
-
-            <div style={{ maxWidth: 360, margin: "0 auto 20px" }}>
-              <OilChart data={OIL_TIMELINE} />
-            </div>
-
-            <div style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "#8a919e",
-              marginBottom: 8, paddingBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.04)",
-            }}>
-              SUPPLY CHAIN IMPACT
-            </div>
-
+        {/* ═══ OIL ═══ */}
+        {tab === "oil" && (
+          <div>
+            <div style={{ fontSize: 8, color: "#4a5565", letterSpacing: "0.1em" }}>BRENT CRUDE OIL</div>
+            <div style={{ fontSize: 34, fontWeight: 800, color: "#ef4444", fontFamily: HD }}>$92.69</div>
+            <div style={{ fontSize: 12, color: "#ef4444", fontWeight: 600, marginBottom: 2 }}>+35.6% weekly — largest gain in futures history</div>
+            <div style={{ fontSize: 8, color: "#333d4d", fontStyle: "italic", marginBottom: 14 }}>Source: CNBC, OilPrice.com · 7 Mar close</div>
+            <OilSparkline />
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "#5a6575", marginTop: 16, marginBottom: 6, paddingBottom: 3, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>SUPPLY DISRUPTIONS</div>
             {[
-              { label: "Strait of Hormuz", value: "Near-zero traffic", status: "critical", source: "UKMTO" },
-              { label: "Iraq production", value: "−1.5M barrels/day", status: "critical", source: "Reuters" },
-              { label: "Kuwait production", value: "Cutting output", status: "warning", source: "WSJ" },
-              { label: "Qatar LNG", value: "Force Majeure declared", status: "critical", source: "QatarEnergy" },
-              { label: "Goldman Sachs forecast", value: ">$100/bbl next week possible", status: "alert", source: "Goldman Sachs" },
-              { label: "US gasoline", value: "+$0.27/gal in 1 week", status: "warning", source: "AAA/CNBC" },
-              { label: "European gas", value: "+50% surge", status: "critical", source: "Bloomberg" },
-              { label: "Shipping insurance", value: "Withdrawn for Persian Gulf", status: "critical", source: "Lloyd's List" },
-            ].map((item, i) => (
-              <div key={i} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.03)",
-              }}>
-                <div>
-                  <span style={{ fontSize: 11, color: "#8a919e" }}>{item.label}</span>
-                  <span style={{ fontSize: 9, color: "#4a5060", marginLeft: 6 }}>{item.source}</span>
-                </div>
-                <span style={{
-                  fontSize: 11, fontWeight: 700,
-                  color: item.status === "critical" ? "#ef4444" : item.status === "alert" ? "#f59e0b" : "#c9cdd4",
-                }}>{item.value}</span>
-              </div>
-            ))}
-
-            {/* Key events on chart */}
-            <div style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "#8a919e",
-              marginTop: 16, marginBottom: 8, paddingBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.04)",
-            }}>
-              PRICE DRIVERS
-            </div>
-            {OIL_TIMELINE.filter(d => d.event).map((d, i) => (
-              <div key={i} style={{
-                display: "flex", gap: 10, alignItems: "baseline", padding: "4px 0",
-              }}>
-                <span style={{ fontSize: 10, color: "#5a6170", minWidth: 48 }}>{d.date}</span>
-                <span style={{ fontSize: 10, color: "#ef4444", fontWeight: 700 }}>${d.brent}</span>
-                <span style={{ fontSize: 10, color: "#8a919e" }}>{d.event}</span>
+              ["Strait of Hormuz", "Near-zero traffic", "c"], ["Iraq output", "−1.5M bbl/day", "c"],
+              ["Kuwait output", "Cutting production", "w"], ["Qatar LNG", "Force Majeure", "c"],
+              ["EU natural gas", "+50% surge", "c"], ["Shipping insurance", "Withdrawn", "c"],
+              ["Goldman forecast", ">$100 next week", "w"], ["US gasoline", "+$0.27/gal in 7d", "w"],
+            ].map(([l, v, s], i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.02)" }}>
+                <span style={{ fontSize: 10, color: "#6b7585" }}>{l}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: s === "c" ? "#ef4444" : "#f59e0b" }}>{v}</span>
               </div>
             ))}
           </div>
         )}
 
-        {/* ── STATEMENTS TAB ── */}
-        {tab === "statements" && (
-          <div style={{ animation: "slideIn 0.3s ease" }}>
-            <div style={{ fontSize: 11, color: "#5a6170", marginBottom: 14 }}>
-              Key declarations from conflict parties. Note the internal rift within Iran's leadership.
+        {/* ═══ VOICES ═══ */}
+        {tab === "voices" && (
+          <div>
+            <div style={{ background: "rgba(168,85,247,0.05)", border: "1px solid rgba(168,85,247,0.12)", borderRadius: 6, padding: "9px 11px", marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa" }}>IRAN COMMAND CRISIS</div>
+              <div style={{ fontSize: 9, color: "#5a6575", lineHeight: 1.5, marginTop: 2 }}>Pezeshkian ordered strikes to stop. IRGC overruled him. Attacks continued on Dubai. Unprecedented breakdown in command.</div>
             </div>
-
-            {/* Regime rift alert */}
-            <div style={{
-              background: "rgba(168,85,247,0.06)", border: "1px solid rgba(168,85,247,0.2)",
-              borderRadius: 8, padding: "12px 14px", marginBottom: 14,
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#a78bfa", letterSpacing: "0.06em", marginBottom: 6 }}>
-                ⚠ {REGIME_RIFT.title}
-              </div>
-              <div style={{ fontSize: 11, color: "#8a919e", lineHeight: 1.6 }}>{REGIME_RIFT.detail}</div>
-              <div style={{ fontSize: 9, color: "#4a5060", marginTop: 4, fontStyle: "italic" }}>
-                Sources: {REGIME_RIFT.sources}
-              </div>
-            </div>
-
-            {/* Group by side */}
-            {["gulf", "iran", "coalition"].map(side => (
-              <div key={side} style={{ marginBottom: 14 }}>
-                <div style={{
-                  fontSize: 9, fontWeight: 700, letterSpacing: "0.15em",
-                  color: sideColors[side], marginBottom: 6,
-                  paddingBottom: 4, borderBottom: `1px solid ${sideColors[side]}22`,
-                }}>
-                  {sideLabels[side]}
-                </div>
-                {STATEMENTS.filter(s => s.side === side).map((s, i) => (
-                  <div key={i} style={{
-                    borderLeft: `3px solid ${sideColors[side]}`,
-                    padding: "10px 14px", marginBottom: 6, borderRadius: "0 6px 6px 0",
-                    background: `${sideColors[side]}08`,
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 16 }}>{s.flag}</span>
-                        <div>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "#f0f2f5" }}>{s.who}</span>
-                          <span style={{ fontSize: 10, color: "#5a6170", marginLeft: 6 }}>{s.role}</span>
-                        </div>
+            {[
+              { label: "GULF STATES", side: "gulf" },
+              { label: "IRAN", side: "iran" },
+              { label: "US / ISRAEL", side: "us" },
+            ].map(group => (
+              <div key={group.side} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: "0.12em", color: sideColor[group.side], marginBottom: 5, paddingBottom: 3, borderBottom: `1px solid ${sideColor[group.side]}18` }}>{group.label}</div>
+                {STMT.filter(s => s.side === group.side).map((s, i) => (
+                  <div key={i} style={{ borderLeft: `2px solid ${sideColor[group.side]}`, padding: "7px 10px", marginBottom: 4, borderRadius: "0 5px 5px 0", background: sideColor[group.side] + "06" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 14 }}>{s.flag}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "#edf0f5" }}>{s.who}</span>
+                        <span style={{ fontSize: 8, color: "#3d4755" }}>{s.role}</span>
                       </div>
-                      <span style={{ fontSize: 9, color: "#4a5060" }}>{s.date}</span>
+                      <span style={{ fontSize: 7, color: "#2d3745" }}>{s.d}</span>
                     </div>
-                    <div style={{ fontSize: 12, color: "#c9cdd4", fontStyle: "italic", lineHeight: 1.5 }}>
-                      "{s.quote}"
-                    </div>
-                    <div style={{ fontSize: 9, color: "#4a5060", marginTop: 4 }}>via {s.source}</div>
+                    <div style={{ fontSize: 10, color: "#8a94a5", fontStyle: "italic", lineHeight: 1.45 }}>"{s.q}"</div>
+                    <div style={{ fontSize: 7, color: "#2d3745", marginTop: 2 }}>via {s.via}</div>
                   </div>
                 ))}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ═══ YOUR EMBASSY ═══ */}
+        {tab === "embassy" && (
+          <div>
+            <div style={{ fontSize: 10, color: "#4a5565", marginBottom: 12 }}>
+              Official advisories from embassies with major expat populations in the Gulf. Hotlines, evacuation status, and recommended actions. Over 24 million foreign workers are in the Gulf region.
+            </div>
+            {EMBASSIES.map((em, i) => (
+              <div key={i} style={{
+                background: "rgba(255,255,255,0.012)", borderRadius: 6,
+                borderLeft: `3px solid ${em.color}`,
+                padding: "10px 12px", marginBottom: 7,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>{em.flag}</span>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#edf0f5", fontFamily: HD }}>{em.country}</span>
+                      <span style={{ fontSize: 9, color: "#4a5565", marginLeft: 6 }}>{em.pop}</span>
+                    </div>
+                  </div>
+                  <Badge label={em.advisory} color={em.color} />
+                </div>
+                <div style={{ fontSize: 10, color: "#7a8595", lineHeight: 1.55, marginBottom: 4 }}>{em.detail}</div>
+                <div style={{ fontSize: 9, color: "#60a5fa", marginBottom: 2 }}>
+                  Action: {em.action}
+                </div>
+                <div style={{ fontSize: 9, color: "#6b7585" }}>
+                  Hotline: {em.hotline}
+                </div>
+                {em.url && (
+                  <a href={em.url} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 8, color: "#60a5fa", textDecoration: "none", borderBottom: "1px solid #60a5fa33", marginTop: 4, display: "inline-block" }}>
+                    Official advisory ↗
+                  </a>
+                )}
+              </div>
+            ))}
+            <div style={{ fontSize: 9, color: "#333d4d", marginTop: 8, lineHeight: 1.5, fontStyle: "italic" }}>
+              Sources: US State Dept, UK FCDO, CNN, NBC News, Gulf News, Wikipedia, individual embassy statements. Population estimates approximate. Hotlines may be overloaded — try multiple times.
+            </div>
+          </div>
+        )}
+
+        {/* ═══ DIPLOMACY ═══ */}
+        {tab === "diplo" && (
+          <div>
+            {/* Timeline countdown */}
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ fontSize: 9, color: "#4a5565", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 6 }}>TRUMP'S 4-WEEK TIMETABLE</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div>
+                  <span style={{ fontSize: 28, fontWeight: 800, color: "#f59e0b", fontFamily: HD }}>{DIPLO.timeline.daysLeft}</span>
+                  <span style={{ fontSize: 11, color: "#4a5565", marginLeft: 4 }}>days remaining</span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444" }}>{DIPLO.status}</div>
+                  <div style={{ fontSize: 9, color: "#4a5565" }}>Day {DIPLO.timeline.daysPassed} of ~28</div>
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div style={{ height: 8, background: "rgba(255,255,255,0.04)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ width: `${(DIPLO.timeline.daysPassed / 28) * 100}%`, height: "100%", background: "linear-gradient(90deg, #ef4444, #f59e0b)", borderRadius: 4 }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#3d4755", marginTop: 3 }}>
+                <span>Feb 28 — War begins</span>
+                <span>~Mar 28 — Trump's deadline</span>
+              </div>
+            </div>
+
+            {/* Negotiation channels */}
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#6b7585", marginBottom: 8 }}>NEGOTIATION CHANNELS</div>
+            {DIPLO.tracks.map((t, i) => {
+              const sc = { stalled: "#ef4444", dormant: "#4a5565", active: "#22c55e", fractured: "#f59e0b", blocked: "#ef4444", crisis: "#a78bfa" };
+              return (
+                <div key={i} style={{ borderLeft: `2px solid ${sc[t.s] || "#4a5565"}`, padding: "7px 10px", marginBottom: 5, borderRadius: "0 5px 5px 0", background: `${sc[t.s] || "#4a5565"}06` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#edf0f5", fontFamily: HD }}>{t.ch}</span>
+                    <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: "0.12em", color: sc[t.s], background: `${sc[t.s]}14`, border: `1px solid ${sc[t.s]}30`, padding: "2px 6px", borderRadius: 3 }}>
+                      {t.s.toUpperCase()}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: "#7a8595", lineHeight: 1.5 }}>{t.d}</div>
+                  <div style={{ fontSize: 8, color: "#333d4d", marginTop: 2 }}>via {t.src}</div>
+                </div>
+              );
+            })}
+
+            {/* Ceasefire demands */}
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#6b7585", marginTop: 14, marginBottom: 8 }}>CEASEFIRE CONDITIONS (each side)</div>
+            {DIPLO.demands.map((d, i) => (
+              <div key={i} style={{ borderLeft: `2px solid ${d.color}`, padding: "7px 10px", marginBottom: 5, borderRadius: "0 5px 5px 0" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: d.color }}>{d.side}</div>
+                <div style={{ fontSize: 10, color: "#7a8595", lineHeight: 1.5, marginTop: 2 }}>{d.items}</div>
+              </div>
+            ))}
+
+            <div style={{ fontSize: 9, color: "#333d4d", marginTop: 10, lineHeight: 1.5, fontStyle: "italic" }}>
+              Assessment based on public statements and verified reporting. Actual diplomatic back-channels may exist that are not publicly known.
+            </div>
           </div>
         )}
       </main>
 
-      {/* ═══ FOOTER ═══ */}
-      <footer style={{
-        padding: "16px 18px", borderTop: "1px solid rgba(255,255,255,0.04)",
-        fontSize: 9, color: "#3a4050", lineHeight: 1.6, textAlign: "center",
-      }}>
-        <div style={{ marginBottom: 4 }}>
-          <strong style={{ color: "#5a6170" }}>gulfresidentwatch.com</strong> · Independent conflict impact tracker for Gulf residents
+      {/* ═══ EMAIL CAPTURE ═══ */}
+      <div style={{ padding: "16px", background: "rgba(96,165,250,0.04)", borderTop: "1px solid rgba(96,165,250,0.1)", borderBottom: "1px solid rgba(96,165,250,0.1)" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#edf0f5", fontFamily: HD, marginBottom: 3 }}>Get Daily Alerts</div>
+        <div style={{ fontSize: 10, color: "#6b7585", marginBottom: 10 }}>Gulf Crisis Briefing — verified data, delivered to your inbox every morning at 6am GST.</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            type="email"
+            placeholder="your@email.com"
+            style={{
+              flex: 1, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 5, padding: "8px 12px", color: "#edf0f5", fontSize: 12,
+              fontFamily: MONO, outline: "none",
+            }}
+            onFocus={(e) => e.target.style.borderColor = "#60a5fa"}
+            onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
+          />
+          <button
+            onClick={(e) => {
+              const input = e.target.parentElement.querySelector("input");
+              const email = input.value;
+              if (email && email.includes("@")) {
+                input.value = "";
+                alert("Thanks! You'll receive the Gulf Crisis Briefing at 6am GST daily.");
+              }
+            }}
+            style={{
+              background: "#60a5fa", color: "#0a0e18", border: "none", borderRadius: 5,
+              padding: "8px 16px", fontSize: 11, fontWeight: 700, cursor: "pointer",
+              fontFamily: MONO, whiteSpace: "nowrap",
+            }}
+          >
+            Subscribe
+          </button>
         </div>
-        <div>
-          Data sourced from: UAE MoD (WAM), Qatar MoD, Bahrain Defence Force, Kuwait MoD, Saudi MoD, CENTCOM, UKMTO, Lloyd's List, CNBC, Reuters, Al Jazeera, Bloomberg.
-          Figures reflect latest official communiqués and may differ from media reports. Last verified: 8 Mar 2026.
-        </div>
-        <div style={{ marginTop: 4, color: "#2a3040" }}>
-          This dashboard is for informational purposes only. Always follow official civil defense instructions (NCEMA, Qatar MoI, etc.).
+        <div style={{ fontSize: 8, color: "#3d4755", marginTop: 6 }}>Free during the conflict. No spam. Unsubscribe anytime.</div>
+      </div>
+
+      <footer style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.03)", textAlign: "center" }}>
+        <div style={{ fontSize: 9, fontWeight: 600, color: "#3d4755" }}>gulfresidentwatch.com</div>
+        <div style={{ fontSize: 7, color: "#1d2535", lineHeight: 1.5, marginTop: 3 }}>
+          Sources: UAE MoD (WAM), Qatar MoD, BDF, Kuwait MoD, Saudi MoD, CENTCOM, UKMTO, Lloyd's, Reuters, Al Jazeera, CNBC, Bloomberg, The National, JINSA, Breaking Defense. Verified {LAST_UPDATED}. For informational purposes only.
         </div>
       </footer>
     </div>
