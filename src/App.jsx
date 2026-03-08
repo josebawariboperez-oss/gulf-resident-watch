@@ -354,6 +354,31 @@ export default function App() {
   const [expDef, setExpDef] = useState(null);
   const [expQA, setExpQA] = useState(null);
   const [showAllEv, setShowAllEv] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(LAST_UPDATED);
+  const [liveData, setLiveData] = useState(null);
+  const [refreshError, setRefreshError] = useState(null);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const res = await fetch("/api/update");
+      const json = await res.json();
+      if (json.success && json.data) {
+        setLiveData(json.data);
+        setLastRefresh(new Date().toLocaleString("en-GB", {
+          day: "numeric", month: "short", year: "numeric",
+          hour: "2-digit", minute: "2-digit", timeZone: "Asia/Dubai"
+        }) + " GST");
+      } else {
+        setRefreshError("Update returned no data. Using cached data.");
+      }
+    } catch (err) {
+      setRefreshError("Could not fetch update. Using cached data.");
+    }
+    setRefreshing(false);
+  }, []);
 
   const tabs = [
     { id: "overview", l: "OVERVIEW" },
@@ -390,9 +415,18 @@ export default function App() {
             <h1 style={{ fontSize: 18, fontWeight: 800, color: "#edf0f5", fontFamily: HD }}>Gulf Resident Watch</h1>
             <div style={{ fontSize: 9, color: "#3d4755", marginTop: 1 }}>Iran War Impact Dashboard · Verified Sources</div>
           </div>
-          <div style={{ textAlign: "right", fontSize: 8, color: "#3d4755" }}>
-            <div style={{ fontWeight: 600 }}>8 MAR 2026</div>
-            <div>{LAST_UPDATED}</div>
+          <div style={{ textAlign: "right" }}>
+            <button onClick={handleRefresh} disabled={refreshing} style={{
+              background: refreshing ? "rgba(255,255,255,0.02)" : "rgba(239,68,68,0.06)",
+              border: "1px solid rgba(239,68,68,0.15)", borderRadius: 5,
+              color: "#ef4444", fontSize: 9, fontWeight: 700, padding: "5px 10px",
+              cursor: refreshing ? "wait" : "pointer", fontFamily: MONO, marginBottom: 3,
+            }}>
+              {refreshing ? "Updating..." : "↻ Live Update"}
+            </button>
+            <div style={{ fontSize: 7, color: "#2d3745" }}>{lastRefresh}</div>
+            {refreshError && <div style={{ fontSize: 7, color: "#f59e0b", marginTop: 2 }}>{refreshError}</div>}
+            {liveData && <div style={{ fontSize: 7, color: "#22c55e", marginTop: 2 }}>Live data active</div>}
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4, marginTop: 10 }}>
