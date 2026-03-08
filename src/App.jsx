@@ -257,12 +257,14 @@ function BarChart({ label, hit, total, color }) {
   );
 }
 
-function EscalationMeter() {
-  const curr = ESC[ESC.length - 1];
+function EscalationMeter({ liveEsc }) {
+  const curr = liveEsc?.score ? liveEsc : ESC[ESC.length - 1];
   const prev = ESC[ESC.length - 2];
-  const trend = curr.s > prev.s ? "ESCALATING" : curr.s < prev.s ? "DE-ESCALATING" : "STABLE";
+  const trend = liveEsc?.trend ? liveEsc.trend.toUpperCase() : (curr.s || curr.score) > prev.s ? "ESCALATING" : (curr.s || curr.score) < prev.s ? "DE-ESCALATING" : "STABLE";
+  const score = curr.score || curr.s;
   const tc = trend === "ESCALATING" ? "#ef4444" : trend === "DE-ESCALATING" ? "#22c55e" : "#f59e0b";
   const arrow = trend === "ESCALATING" ? "↑" : trend === "DE-ESCALATING" ? "↓" : "→";
+  const note = liveEsc?.reason || curr.note;
 
   return (
     <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
@@ -270,14 +272,14 @@ function EscalationMeter() {
         <div>
           <div style={{ fontSize: 9, color: "#4a5565", letterSpacing: "0.1em", fontWeight: 700 }}>ESCALATION INDEX</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 32, fontWeight: 800, color: tc, fontFamily: HD }}>{curr.s}</span>
+            <span style={{ fontSize: 32, fontWeight: 800, color: tc, fontFamily: HD }}>{score}</span>
             <span style={{ fontSize: 11, color: "#4a5565" }}>/100</span>
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: tc }}>{arrow}</div>
           <div style={{ fontSize: 10, fontWeight: 700, color: tc, letterSpacing: "0.05em" }}>{trend}</div>
-          <div style={{ fontSize: 9, color: "#3d4755" }}>{curr.note}</div>
+          <div style={{ fontSize: 9, color: "#3d4755" }}>{note}</div>
         </div>
       </div>
       {/* Sparkline */}
@@ -391,10 +393,40 @@ export default function App() {
     { id: "diplo", l: "DIPLOMACY" },
   ];
 
+  // ── Merge live data with static defaults ──
+  const ld = liveData; // shorthand
+
+  const liveUae = ld?.uae || {};
+  const liveOil = ld?.oil || {};
+  const liveHormuz = ld?.hormuz || {};
+  const liveAirports = ld?.airports || {};
+  const liveEsc = ld?.escalation_assessment || {};
+  const liveEvents = ld?.latest_events || [];
+
+  // Compute header stats from live data if available
+  const statMissiles = ld
+    ? fmt((liveUae.ballistic_detected || 0) + (ld.qatar?.ballistic_detected || 0) + (ld.bahrain?.ballistic_detected || 0) + (ld.kuwait?.ballistic_detected || 0))
+    : "462";
+  const statDrones = ld
+    ? fmt((liveUae.drones_detected || 0) + (ld.qatar?.drones_detected || 0) + (ld.bahrain?.drones_detected || 0) + (ld.kuwait?.drones_detected || 0))
+    : "1,780";
+  const statDead = ld
+    ? String((liveUae.dead || 0) + (ld.qatar?.dead || 0) + (ld.bahrain?.dead || 0) + (ld.kuwait?.dead || 0) + (ld.saudi?.dead || 0))
+    : String(DEF.reduce((s, c) => s + c.dead, 0));
+  const statBrent = ld ? `$${liveOil.brent || "92.69"}` : "$92.69";
+  const statHormuz = ld
+    ? (liveHormuz.status === "closed" ? "SHUT" : liveHormuz.status === "limited" ? "LIMITED" : liveHormuz.status?.toUpperCase() || "SHUT")
+    : "SHUT";
+
+  // Merge events: live events first, then static
+  const allEvents = liveEvents.length > 0
+    ? [...liveEvents.map(e => ({ t: e.time, h: e.title, s: e.source, tp: e.type, hot: true, url: e.url || "" })), ...EV]
+    : EV;
+
   const totalDead = DEF.reduce((s, c) => s + c.dead, 0);
 
   return (
-    <div style={{ fontFamily: MONO, background: "#0a0e18", color: "#a0a8b8", minHeight: "100vh", maxWidth: 520, margin: "0 auto" }}>
+    <div style={{ fontFamily: MONO, background: "#0a0e18", color: "#a0a8b8", minHeight: "100vh", maxWidth: 900, margin: "0 auto", padding: "0" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700;800&display=swap');
         @keyframes glow{0%,100%{opacity:1}50%{opacity:.3}}
@@ -402,10 +434,29 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0}
         body{background:#0a0e18}
         button{transition:opacity .15s}button:active{opacity:.7}
+        @media(min-width:640px){
+          .grw-header-stats{grid-template-columns:repeat(5,1fr)!important;gap:8px!important}
+          .grw-header-stats>div{padding:10px 8px!important}
+          .grw-header-stats>div>div:last-child{font-size:20px!important}
+          .grw-main{padding:20px 28px!important}
+          .grw-tabs{padding:0 28px!important}
+          .grw-header{padding:18px 28px 14px!important}
+          .grw-share{padding:10px 28px!important}
+          .grw-cta{padding:20px 28px!important}
+          .grw-footer{padding:16px 28px!important}
+          h1{font-size:24px!important}
+        }
+        @media(min-width:768px){
+          .grw-defense-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+          .grw-emirate-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+          .grw-embassy-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+          .grw-events-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+          .grw-biz-items{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+        }
       `}</style>
 
       {/* HEADER */}
-      <header style={{ borderBottom: "1px solid rgba(239,68,68,0.1)", padding: "14px 16px 10px" }}>
+      <header className="grw-header" style={{ borderBottom: "1px solid rgba(239,68,68,0.1)", padding: "14px 16px 10px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -429,13 +480,13 @@ export default function App() {
             {liveData && <div style={{ fontSize: 7, color: "#22c55e", marginTop: 2 }}>Live data active</div>}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4, marginTop: 10 }}>
+        <div className="grw-header-stats" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4, marginTop: 10 }}>
           {[
-            { l: "MISSILES", v: "462", c: "#ef4444" },
-            { l: "DRONES", v: "1,780", c: "#f97316" },
-            { l: "KILLED", v: String(totalDead), c: "#ef4444" },
-            { l: "BRENT", v: "$92.69", c: "#ef4444" },
-            { l: "HORMUZ", v: "SHUT", c: "#ef4444" },
+            { l: "MISSILES", v: statMissiles, c: "#ef4444" },
+            { l: "DRONES", v: statDrones, c: "#f97316" },
+            { l: "KILLED", v: statDead, c: "#ef4444" },
+            { l: "BRENT", v: statBrent, c: "#ef4444" },
+            { l: "HORMUZ", v: statHormuz, c: "#ef4444" },
           ].map((s, i) => (
             <div key={i} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 5, padding: "5px 2px", textAlign: "center" }}>
               <div style={{ fontSize: 6, color: "#4a5565", letterSpacing: "0.1em" }}>{s.l}</div>
@@ -446,7 +497,7 @@ export default function App() {
       </header>
 
       {/* SHARE */}
-      <div style={{ padding: "8px 16px", display: "flex", gap: 6 }}>
+      <div className="grw-share" style={{ padding: "8px 16px", display: "flex", gap: 6 }}>
         <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`Gulf Resident Watch Day ${DAY}: UAE 1,305 drones / 221 missiles. Brent $92.69. Hormuz closed. Dubai limited flights, Doha closed, Muscat open. gulfresidentwatch.com`)}`, "_blank")} style={{ background: "#25D366", color: "#fff", border: "none", borderRadius: 5, padding: "6px 12px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: MONO }}>
           WhatsApp
         </button>
@@ -456,7 +507,7 @@ export default function App() {
       </div>
 
       {/* TABS */}
-      <nav style={{ display: "flex", overflowX: "auto", padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      <nav className="grw-tabs" style={{ display: "flex", overflowX: "auto", padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: "none", border: "none", cursor: "pointer", padding: "7px 10px",
@@ -467,19 +518,25 @@ export default function App() {
         ))}
       </nav>
 
-      <main style={{ padding: "14px 16px", animation: "fadeIn .25s ease" }}>
+      <main className="grw-main" style={{ padding: "14px 16px", animation: "fadeIn .25s ease" }}>
 
         {/* ═══ OVERVIEW ═══ */}
         {tab === "overview" && (
           <div>
-            <EscalationMeter />
+            {liveData && (
+              <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", borderRadius: 6, padding: "8px 12px", marginBottom: 10, fontSize: 10, color: "#22c55e", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+                Live data active — last fetched {lastRefresh}
+              </div>
+            )}
+            <EscalationMeter liveEsc={liveEsc} />
 
             {/* Hormuz alert */}
             <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 7, padding: "9px 12px", marginBottom: 14, display: "flex", gap: 10, alignItems: "center" }}>
               <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#ef4444", display: "inline-block", animation: "glow 2s infinite", flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444" }}>STRAIT OF HORMUZ — EFFECTIVELY CLOSED</div>
-                <div style={{ fontSize: 9, color: "#5a6575" }}>4 transits/24h · 150+ ships stuck · Insurance withdrawn · 20% of global crude</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444" }}>STRAIT OF HORMUZ — {liveHormuz.status ? liveHormuz.status.toUpperCase() : "EFFECTIVELY CLOSED"}</div>
+                <div style={{ fontSize: 9, color: "#5a6575" }}>{liveHormuz.detail || "4 transits/24h · 150+ ships stuck · Insurance withdrawn · 20% of global crude"}</div>
               </div>
             </div>
 
@@ -598,7 +655,7 @@ export default function App() {
         {tab === "events" && (
           <div>
             <div style={{ fontSize: 10, color: "#4a5565", marginBottom: 10 }}>Last 48 hours. Most recent first.</div>
-            {(showAllEv ? EV : EV.slice(0, 8)).map((ev, i) => {
+            {(showAllEv ? allEvents : allEvents.slice(0, 8)).map((ev, i) => {
               const cl = evColor[ev.tp] || "#6b7585";
               return (
                 <div key={i} style={{
@@ -623,12 +680,12 @@ export default function App() {
                 </div>
               );
             })}
-            {!showAllEv && EV.length > 8 && (
+            {!showAllEv && allEvents.length > 8 && (
               <button onClick={() => setShowAllEv(true)} style={{
                 background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)",
                 borderRadius: 5, padding: "7px", fontSize: 9, color: "#4a5565",
                 cursor: "pointer", fontFamily: MONO, width: "100%", marginTop: 4,
-              }}>Show all {EV.length} events</button>
+              }}>Show all {allEvents.length} events</button>
             )}
           </div>
         )}
@@ -793,7 +850,7 @@ export default function App() {
       </main>
 
       {/* ═══ EMAIL CAPTURE ═══ */}
-      <div style={{ padding: "16px", background: "rgba(96,165,250,0.04)", borderTop: "1px solid rgba(96,165,250,0.1)", borderBottom: "1px solid rgba(96,165,250,0.1)" }}>
+      <div className="grw-cta" style={{ padding: "16px", background: "rgba(96,165,250,0.04)", borderTop: "1px solid rgba(96,165,250,0.1)", borderBottom: "1px solid rgba(96,165,250,0.1)" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "#edf0f5", fontFamily: HD, marginBottom: 3 }}>Get Daily Alerts</div>
         <div style={{ fontSize: 10, color: "#6b7585", marginBottom: 10 }}>Gulf Crisis Briefing — verified data, delivered to your inbox every morning at 6am GST.</div>
         <a
@@ -812,7 +869,7 @@ export default function App() {
         <div style={{ fontSize: 8, color: "#3d4755", marginTop: 6 }}>Free during the conflict. No spam. Unsubscribe anytime.</div>
       </div>
 
-      <footer style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.03)", textAlign: "center" }}>
+      <footer className="grw-footer" style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.03)", textAlign: "center" }}>
         <div style={{ fontSize: 9, fontWeight: 600, color: "#3d4755" }}>gulfresidentwatch.com</div>
         <div style={{ fontSize: 7, color: "#1d2535", lineHeight: 1.5, marginTop: 3 }}>
           Sources: UAE MoD (WAM), Qatar MoD, BDF, Kuwait MoD, Saudi MoD, CENTCOM, UKMTO, Lloyd's, Reuters, Al Jazeera, CNBC, Bloomberg, The National, JINSA, Breaking Defense. Verified {LAST_UPDATED}. For informational purposes only.
